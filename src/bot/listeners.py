@@ -3,17 +3,14 @@
 import logging
 import sqlite3
 
-from discord import (
-    app_commands,
-    Interaction as Inter
-)
+import discord
 from discord.ext import commands
 
 from db import db
 
 log = logging.getLogger(__name__)
 
-class LevelsCog(commands.Cog, name="Level Commands"):
+class ListenersCog(commands.Cog, name="Event Listeners"):
     """Cog for level commands"""
 
     def __init__(self, bot: commands.Bot):
@@ -115,6 +112,20 @@ class LevelsCog(commands.Cog, name="Level Commands"):
         self.remove_guild_members(guild.id)
 
     @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        """When a message is sent"""
+
+        if message.author.bot:
+            return
+
+        log.debug("Adding score to member %s", message.author.id)
+        db.execute(
+            "UPDATE scores SET score = score + 30 "
+            "WHERE member_id = ? AND guild_id = ?",
+            message.author.id, message.guild.id
+        )
+
+    @commands.Cog.listener()
     async def on_ready(self):
         """Called when the bot is ready"""
 
@@ -126,4 +137,4 @@ class LevelsCog(commands.Cog, name="Level Commands"):
 async def setup(bot: commands.Bot) -> None:
     """Setup the cog"""
 
-    await bot.add_cog(LevelsCog(bot))
+    await bot.add_cog(ListenersCog(bot))

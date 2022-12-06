@@ -63,13 +63,3 @@ class Bot(commands.Bot):
         log.info("Closing bot...")
         db.commit()  # commit changes before closing
         await super().close()
-
-    async def load_extension_from_file(self, filepath: str) -> None:
-        """Load an extension
-
-        Args:
-            filepath (str): The extension's path
-        """
-
-        log.info("Loading extension %s", filepath)
-        await self.load_extension(filepath.replace('.py', '').replace('/', '.'))
