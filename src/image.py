@@ -2,7 +2,6 @@
 
 import logging
 from functools import cache
-from time import perf_counter
 from abc import ABC, abstractmethod
 
 from discord import Status, Colour, File
@@ -75,20 +74,16 @@ class ImageEditor(Editor, ABC):
     @abstractmethod
     async def draw(self) -> None:
         """Draw the image"""
-        pass
 
     @abstractmethod
     def to_file(self) -> File:
         """Create and return a discord.File of the image"""
-        pass
 
 
 class ScoreEditor(ImageEditor):
-    """The image editor"""
+    """The image editor for the score image"""
 
-    __slots__ = (
-        "canvas", "member", "accent_colour", "status_icon", "status_colour"
-    )
+    __slots__ = ("member", "accent_colour")
 
     def __init__(self, member, score_object: ScoreObject, *args, **kwargs):
         super().__init__(
@@ -98,8 +93,6 @@ class ScoreEditor(ImageEditor):
 
         self.member = member
         self.score = score_object
-        self.canvas = Canvas(self.image.size)
-        self.status_colour, self.status_editor, self.status_pos = get_status(member.status)
 
         self.accent_colour = self.member.colour
         if self.accent_colour == Colour.default():
@@ -131,24 +124,26 @@ class ScoreEditor(ImageEditor):
             description="Level card image"
         )
 
-    async def draw(self):
-        """Draw the image"""
+    async def draw(self) -> None:
+        """Draw the entire image, call this to actually create the image"""
 
-        # Draw the image
+        # Draw all of the separate image components
         self.draw_background()
-        await self.draw_avatar()  # http call for the image
+        await self.draw_avatar()
         self.draw_status()
         self.draw_name()
         self.draw_level()
         self.draw_score()
         self.draw_progress()
 
-        # Round the corners and apply antialias
+        # Smooth the corners
         self.rounded_corners(20)
+
+        # Antialias the image | also halves the image size due to limitations
         self.antialias()
 
     def draw_background(self):
-        """Draw the accent background"""
+        """Draws an accent polygon on the background"""
 
         self.polygon(
             ((2, 2), (2, 360), (360, 2), (2, 2)),
@@ -156,52 +151,48 @@ class ScoreEditor(ImageEditor):
         )
 
     async def draw_avatar(self):
-        """Draw the avatar"""
+        """Draw the avatar with a thin black circle around it"""
 
-        self.paste(Editor(
-            Canvas(
-                (320, 320),
-                color=BLACK
-            )
-            ).circle_image().paste(
-                Editor(
-                    await load_image_async(self.member.display_avatar.url)
-                ).resize((300, 300)).circle_image(),
-                (10, 10)
-            ),
-            (40, 40)
-        )
+        log.debug("drawing avatar")
+
+        avatar = await load_image_async(self.member.display_avatar.url)
+        avatar_image = Editor(avatar).resize((300, 300)).circle_image()
+
+        avatar_image_container = Editor(Canvas((320, 320), color=BLACK)).circle_image()
+        avatar_image_container.paste(avatar_image, (10, 10))
+
+        self.paste(avatar_image_container, (40, 40))
 
     def draw_status(self):
-        """Draw the status icon"""
+        """Draw the status icon over the avatar image"""
 
-        status_image = Editor(Canvas(
-            (90, 90),
-            color=BLACK
-        )).circle_image().paste(
-            Editor(Canvas(
-                (70, 70),
-                color=self.status_colour.to_rgb()
-            )).circle_image(),
+        # Get the colour and icons for the status
+        status_colour, status_icon, status_icon_position = get_status(self.member.status)
+
+        status_image = Editor(Canvas((90, 90), color=BLACK)).circle_image()
+        status_image.paste(
+            Editor(Canvas((70, 70), color=status_colour.to_rgb())).circle_image(),
             (10, 10)
         )
 
-        if self.status_editor:
-            status_image.paste(self.status_editor, self.status_pos)
+        # Paste the status icon onto the card if applicable (idle, dnd, offline)
+        if status_icon:
+            status_image.paste(status_icon, status_icon_position)
 
-        # Paste the status icon onto the card
         self.paste(status_image, (260, 260))
 
     def draw_progress(self):
-        """Draw the progress bar"""
+        """Draw the progress bar across the image"""
 
         log.debug("drawing progress bar")
 
+        progress = self.score.progress
         position = (420, 275)
         width = 1320
         height = 60
         radius = 40
 
+        # The trough/background of the progress bar
         self.rectangle(
             position=position,
             width=width, height=height,
@@ -209,16 +200,19 @@ class ScoreEditor(ImageEditor):
             radius=radius
         )
 
-        self.bar(
-            position=position,
-            max_width=width, height=height,
-            color=self.accent_colour,
-            radius=radius,
-            percentage=max(self.score.progress, 5),
-        )
+        # The actual progress bar
+        # Only draw if there is progress, otherwise it looks weird
+        if progress > 0:
+            self.bar(
+                position=position,
+                max_width=width, height=height,
+                color=self.accent_colour,
+                radius=radius,
+                percentage=max(progress, 5),
+            )
 
     def draw_name(self):
-        """Draw the name"""
+        """Draw the member's name and discriminator on the image"""
 
         log.debug("drawing name text")
 
@@ -234,14 +228,13 @@ class ScoreEditor(ImageEditor):
             Text(name, font=POPPINS, color=WHITE),
             Text(discriminator, font=POPPINS_SMALL, color=LIGHT_GREY)
         )
-
         self.multi_text(
             position=(420, 220),
             texts=texts
         )
 
     def draw_score(self):
-        """Draw the exp and next exp on the card"""
+        """Draw the score and score to reach the next level on the image"""
 
         log.debug("drawing score text")
 
@@ -252,7 +245,6 @@ class ScoreEditor(ImageEditor):
                 font=POPPINS_SMALL, color=LIGHT_GREY
             )
         )
-
         self.multi_text(
             position=(1740, 225),
             align="right",
@@ -260,7 +252,7 @@ class ScoreEditor(ImageEditor):
         )
 
     def draw_level(self):
-        """Draw the level and rank on the card"""
+        """Draw the level number and rank number on the image"""
 
         log.debug("drawing level and rank text")
 
@@ -270,7 +262,6 @@ class ScoreEditor(ImageEditor):
             Text(" LEVEL", font=POPPINS_SMALL, color=LIGHT_GREY),
             Text(humanize_number(self.score.level), font=POPPINS, color=self.accent_colour)
         )
-
         self.multi_text(
             position=(1700, 80),
             align="right",
