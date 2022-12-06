@@ -4,7 +4,7 @@ import logging
 from functools import cache
 from abc import ABC, abstractmethod
 
-from discord import Status, Colour, File
+from discord import Status, Colour, File, Member
 from easy_pil import Editor, Canvas, Text, load_image_async
 from PIL import Image
 
@@ -80,12 +80,117 @@ class ImageEditor(Editor, ABC):
         """Create and return a discord.File of the image"""
 
 
+class ScoreboardEditor(ImageEditor):
+    """The image editor for the scoreboard image"""
+
+    # THIS CLASS WAS CREATED BY GITHUB COPILOT WITH MINOR TWEAKS TO FIX ERRORS
+    # TODO: REWRITE THIS CLASS FROM THE GROUND UP, THIS ONE WAS JUST A CONCEPT TEST
+
+    __slots__ = ()
+
+    def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
+
+        width = 440 * len(members_and_scores)
+        canvas = Canvas((width, 440), color=BLACK)
+        super().__init__(canvas, *args, **kwargs)
+
+        self.members_and_scores = members_and_scores
+
+    def to_file(self, filename: str = "scoreboard.png") -> File:
+        """Save the image to a file
+
+        Args:
+            filename (str): The filename, defaults to "scoreboard.png"
+
+        Returns:
+            File: The file"""
+
+        return File(
+            self.image_bytes,
+            filename=filename or "image.png",
+            description="Level card image"
+        )
+
+    async def draw(self) -> None:
+        """Draw the scoreboard image"""
+
+        for i, (member, score) in enumerate(self.members_and_scores):
+            await self.draw_member(member, score, i)
+
+        self.antialias()
+
+    async def draw_member(self, member: Member, score: ScoreObject, index: int) -> None:
+        """Draw a certain member onto the scoreboard"""
+
+        # Draw the background
+        self.draw_background(index)
+
+        # Draw the avatar
+        await self.draw_avatar(member, index)
+
+        # Draw the status
+        self.draw_status(member, index)
+
+        # Draw the name
+        self.draw_name(member, index)
+
+        # Draw the score
+        self.draw_score(score, index)
+
+    def draw_background(self, index: int) -> None:
+        """Draw the background for the member"""
+
+        x = 440 * index
+        self.rectangle((x, 0), width=440, height=440, color=DARK_GREY)
+
+    async def draw_avatar(self, member: Member, index: int) -> None:
+        """Draw the avatar for the member"""
+
+        x = 440 * index
+        avatar = await load_image_async(member.display_avatar.url)
+        avatar = avatar.resize((300, 300))
+
+        self.image.paste(avatar, (x + 70, 70))
+
+    def draw_status(self, member: Member, index: int) -> None:
+        """Draw the status for the member"""
+
+        x = 400 * index
+        status_colour, status_image, status_position = get_status(member.status)
+
+        if status_image:
+            self.image.paste(status_image.image, (x + status_position[0], status_position[1]))
+
+        self.rectangle((x, 0), width=440, height=440, outline=status_colour.to_rgb())
+
+    def draw_name(self, member: Member, index: int) -> None:
+        """Draw the name for the member"""
+
+        x = 440 * index
+        self.text((x + 70, 380), member.display_name, font=POPPINS, color=WHITE)
+
+    def draw_score(self, score: ScoreObject, index: int) -> None:
+        """Draw the score for the member"""
+
+        x = 440 * index
+        self.text((x + 70, 450), humanize_number(score.score), font=POPPINS_SMALL, color=WHITE)
+
+    def antialias(self):
+        """Antialias the image, also halves the image size due
+        to limitations"""
+
+        self.image = self.image.resize(
+            (self.image.width // 2, self.image.height // 2),
+            Image.ANTIALIAS
+        )
+
+
 class ScoreEditor(ImageEditor):
     """The image editor for the score image"""
 
     __slots__ = ("member", "accent_colour")
 
-    def __init__(self, member, score_object: ScoreObject, *args, **kwargs):
+    def __init__(self, member: Member, score_object: ScoreObject, *args, **kwargs):
         super().__init__(
             Canvas((1800, 400), color=BLACK),
             *args, **kwargs

@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from db import db
 from score import ScoreObject
-from image import ScoreEditor
+from image import ScoreEditor, ScoreboardEditor
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +78,11 @@ class CommandsCog(commands.Cog, name="Score Commands"):
         rank_image_file = await self.get_rank(member)
         await inter.followup.send(file=rank_image_file)
 
+    async def _rank_context_menu(self, inter: Inter, member: discord.Member=None):
+        """Get the user's rank | Context menu command"""
+
+        await self.respond_with_rank(inter, member)
+
     @app_commands.command(name="rank")
     async def _rank(self, inter: Inter, member: discord.Member=None):
         """Get the user's rank"""
@@ -93,11 +98,6 @@ class CommandsCog(commands.Cog, name="Score Commands"):
     @app_commands.command(name="score")
     async def _score(self, inter: Inter, member: discord.Member=None):
         """Get the user's score | Alias for `/rank`"""
-
-        await self.respond_with_rank(inter, member)
-
-    async def _rank_context_menu(self, inter: Inter, member: discord.Member=None):
-        """Get the user's rank | Context menu command"""
 
         await self.respond_with_rank(inter, member)
 
@@ -128,6 +128,61 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         score_obj = ScoreObject(member.id, ctx.guild.id, score)
         await ctx.reply(repr(score_obj))
+
+
+    async def get_scoreboard(self, guild: discord.Guild):
+        """Get the scoreboard of the guild
+
+        Args:
+            guild (discord.Guild): The guild
+
+        Returns:
+            discord.File: The scoreboard image
+        """
+
+        scores = db.records(
+            "SELECT member_id, score FROM scores "
+            "WHERE guild_id = ? ORDER BY score DESC LIMIT 10",
+            guild.id
+        )
+
+        members_and_scores = [
+            (
+                guild.get_member(member_id),
+                ScoreObject(member_id, guild.id, score)
+            )
+            for member_id, score in scores
+        ]
+        print(members_and_scores)
+        scoreboard_image_editor = ScoreboardEditor(members_and_scores)
+        await scoreboard_image_editor.draw()
+        return scoreboard_image_editor.to_file()
+
+    async def respond_with_scoreboard(self, inter: Inter, guild: discord.Guild):
+        """Respond with the scoreboard of the guild to an interaction
+
+        Args:
+            inter (Inter): The interaction
+            guild (discord.Guild): The guild
+        """
+
+        await inter.response.defer(thinking=True)
+
+        scoreboard_image_file = await self.get_scoreboard(guild)
+        await inter.followup.send(file=scoreboard_image_file)
+
+    @app_commands.command(name="scoreboard")
+    async def _scoreboard(self, inter: Inter):
+        """Get the scoreboard of the guild"""
+
+        await self.respond_with_scoreboard(inter, inter.guild)
+
+    @commands.command(name="scoreboard")
+    async def _scoreboard_normal_cmd(self, ctx: commands.Context):
+        """Get the scoreboard of the guild"""
+
+        scoreboard_image_file = await self.get_scoreboard(ctx.guild)
+        await ctx.reply(file=scoreboard_image_file)
 
 
 async def setup(bot: commands.Bot) -> None:
