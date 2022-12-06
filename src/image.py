@@ -3,11 +3,13 @@
 import logging
 from functools import cache
 from time import perf_counter
+from abc import ABC, abstractmethod
 
 from discord import Status, Colour, File
 from easy_pil import Editor, Canvas, Text, load_image_async
 from PIL import Image
 
+from utils import humanize_number
 from score import ScoreObject
 from constants import (
     WHITE,
@@ -22,39 +24,66 @@ from constants import (
 log = logging.getLogger(__name__)
 
 @cache
-def unpack_status(status) -> tuple[Image.Image, Colour]:
+def get_status(status, /) -> tuple[Colour, Editor, tuple[int, int]]:
     """Get the status image and colour
 
     Args:
-        status (str): The status
+        status (discord.Status): The status
 
     Returns:
-        Image: The status image
         Colour: The status colour
+        Editor: The status image editor
+        Tuple[int, int]: The status image position
     """
 
     match status:
 
         case Status.online:
-            return Colour.green()
+            return Colour.green(), None, None
 
         case Status.idle:
-            return Colour.dark_gold()
+            return (
+                Colour.dark_gold(),
+                Editor(Canvas((50, 50), color=BLACK)).circle_image(),
+                (5, 10)
+            )
 
         case Status.dnd:
-            return Colour.red()
+            return (
+                Colour.red(),
+                Editor(Canvas((50, 12), color=BLACK)).rounded_corners(15),
+                (20, 39)
+            )
 
         case Status.offline:
-            return Colour.light_grey()
+            return (
+                Colour.light_grey(),
+                Editor(Canvas((40, 40), color=BLACK)).circle_image(),
+                (25, 25)
+            )
 
         case Status.invisible:
-            return Colour.blurple()
+            return Colour.blurple(), None, None
 
         case _:
             raise ValueError(f"Unknown Status: {status}")
 
 
-class ImageEditor(Editor):
+class ImageEditor(Editor, ABC):
+    """An editor for images"""
+
+    @abstractmethod
+    async def draw(self) -> None:
+        """Draw the image"""
+        pass
+
+    @abstractmethod
+    def to_file(self) -> File:
+        """Create and return a discord.File of the image"""
+        pass
+
+
+class ScoreEditor(ImageEditor):
     """The image editor"""
 
     __slots__ = (
@@ -69,8 +98,8 @@ class ImageEditor(Editor):
 
         self.member = member
         self.score = score_object
-        self.canvas = Canvas(self.image)
-        self.status_icon, self.status_colour = unpack_status(member.status)
+        self.canvas = Canvas(self.image.size)
+        self.status_colour, self.status_editor, self.status_pos = get_status(member.status)
 
         self.accent_colour = self.member.colour
         if self.accent_colour == Colour.default():
@@ -107,10 +136,11 @@ class ImageEditor(Editor):
 
         # Draw the image
         self.draw_background()
-        await self._draw_avatar()  # http call for the image
-        self._draw_status()
+        await self.draw_avatar()  # http call for the image
+        self.draw_status()
         self.draw_name()
         self.draw_level()
+        self.draw_score()
         self.draw_progress()
 
         # Round the corners and apply antialias
@@ -122,10 +152,10 @@ class ImageEditor(Editor):
 
         self.polygon(
             ((2, 2), (2, 360), (360, 2), (2, 2)),
-            fill=self._accent_colour
+            fill=self.accent_colour
         )
 
-    async def _draw_avatar(self):
+    async def draw_avatar(self):
         """Draw the avatar"""
 
         self.paste(Editor(
@@ -135,59 +165,38 @@ class ImageEditor(Editor):
             )
             ).circle_image().paste(
                 Editor(
-                    await load_image_async(self.member.avatar_url)
+                    await load_image_async(self.member.display_avatar.url)
                 ).resize((300, 300)).circle_image(),
                 (10, 10)
             ),
             (40, 40)
         )
 
-    def _draw_status(self):
+    def draw_status(self):
         """Draw the status icon"""
 
         status_image = Editor(Canvas(
             (90, 90),
-            color=self._background_1
+            color=BLACK
         )).circle_image().paste(
             Editor(Canvas(
                 (70, 70),
-                color=self._status_colour
+                color=self.status_colour.to_rgb()
             )).circle_image(),
             (10, 10)
         )
 
-        log.debug("Drawing status icon symbol")
-
-        match self.member.status:
-
-            case Status.idle:
-                status_image.paste(Editor(Canvas(
-                    (50, 50),
-                    color=self._background_1
-                )).circle_image(), (5, 10))
-
-            case Status.dnd:
-                status_image.rectangle(
-                    (20, 39), width=50, height=12,
-                    fill=self._background_1, radius=15
-                )
-
-            case Status.offline:
-                status_image.paste(Editor(Canvas(
-                    (40, 40),
-                    color=self._background_1
-                )).circle_image(), (25, 25))
-
-            case _:
-                pass
+        if self.status_editor:
+            status_image.paste(self.status_editor, self.status_pos)
 
         # Paste the status icon onto the card
-        self.editor.paste(status_image, (260, 260))
+        self.paste(status_image, (260, 260))
 
-    def _draw_progress(self):
+    def draw_progress(self):
         """Draw the progress bar"""
 
-        # Bar dimensions
+        log.debug("drawing progress bar")
+
         position = (420, 275)
         width = 1320
         height = 60
@@ -202,104 +211,68 @@ class ImageEditor(Editor):
 
         self.bar(
             position=position,
-            width=width, height=height,
+            max_width=width, height=height,
             color=self.accent_colour,
             radius=radius,
             percentage=max(self.score.progress, 5),
         )
 
-    def _draw_name(self):
+    def draw_name(self):
         """Draw the name"""
+
+        log.debug("drawing name text")
 
         name = self.member.display_name
         discriminator = f"#{self.member.discriminator}"
 
         # Prevent the name text from overflowing
         if len(name) > 15:
-            log.debug("Name is too long, shortening")
+            log.debug("name is too long, shortening")
             name = name[:15]
 
+        texts = (
+            Text(name, font=POPPINS, color=WHITE),
+            Text(discriminator, font=POPPINS_SMALL, color=LIGHT_GREY)
+        )
+
         self.multi_text(
-            position=(420, 220),  # bottom left anchor position
-            texts=(
-                Text(
-                    name,
-                    font=POPPINS,
-                    color=WHITE
-                ),
-                Text(
-                    discriminator,
-                    font=POPPINS_SMALL,
-                    color=LIGHT_GREY
-                )
+            position=(420, 220),
+            texts=texts
+        )
+
+    def draw_score(self):
+        """Draw the exp and next exp on the card"""
+
+        log.debug("drawing score text")
+
+        texts = (
+            Text(humanize_number(self.score.score), font=POPPINS_SMALL, color=WHITE),
+            Text(
+                f"/ {humanize_number(self.score.next_level_score)} XP",
+                font=POPPINS_SMALL, color=LIGHT_GREY
             )
         )
 
-#     def _draw_exp(self):
-#         """Draw the exp and next exp on the card"""
+        self.multi_text(
+            position=(1740, 225),
+            align="right",
+            texts=texts
+        )
 
-#         start = perf_counter()
-#         log.debug("Drawing exp text")
+    def draw_level(self):
+        """Draw the level and rank on the card"""
 
-#         # Draw it right onto the card
-#         self.editor.multi_text(
-#             position=(1740, 225),  # bottom right
-#             align="right",
-#             texts=(
-#                 Text(
-#                     self.lvl_obj.xp,
-#                     font=POPPINS_SMALL,
-#                     color=self._foreground_1
-#                 ),
-#                 Text(
-#                     f"/ {self.lvl_obj.next_xp} XP",
-#                     font=POPPINS_SMALL,
-#                     color=self._foreground_2
-#                 )
-#             )
-#         )
+        log.debug("drawing level and rank text")
 
-#         end = perf_counter()
-#         log.debug(
-#             "Finished drawing exp text in %s seconds",
-#             end-start
-#         )
+        texts = (
+            Text("RANK", font=POPPINS_SMALL, color=LIGHT_GREY),
+            Text(f"#{self.score.rank} ", font=POPPINS, color=self.accent_colour),
+            Text(" LEVEL", font=POPPINS_SMALL, color=LIGHT_GREY),
+            Text(humanize_number(self.score.level), font=POPPINS, color=self.accent_colour)
+        )
 
-#     def _draw_levelrank(self):
-#         """Draw the level and rank on the card"""
-
-#         start = perf_counter()
-#         log.debug("Drawing level and rank text")
-
-#         self.editor.multi_text(
-#             position=(1700, 80),  # top right
-#             align="right",
-#             texts=(
-#                 Text(
-#                     "RANK",
-#                     font=POPPINS_SMALL,
-#                     color=self._foreground_2
-#                 ),
-#                 Text(
-#                     f"#{self.lvl_obj.rank} ",
-#                     font=POPPINS,
-#                     color=self._accent_colour
-#                 ),
-#                 Text(
-#                     "LEVEL",
-#                     font=POPPINS_SMALL,
-#                     color=self._foreground_2
-#                 ),
-#                 Text(
-#                     str(self.lvl_obj.level),
-#                     font=POPPINS,
-#                     color=self._accent_colour
-#                 )
-#             )
-#         )
-
-#         end = perf_counter()
-#         log.debug(
-#             "Finished drawing level and rank text in %s seconds",
-#             end-start
-#         )
+        self.multi_text(
+            position=(1700, 80),
+            align="right",
+            texts=texts
+        )
