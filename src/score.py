@@ -41,7 +41,7 @@ class ScoreObject:
             int: The level
         """
 
-        return (0.07 * sqrt(max(self.score, 1))) + 1
+        return (0.07 * sqrt(max(self._score, 1))) + 1
 
     @property
     def score(self) -> int:
@@ -51,7 +51,7 @@ class ScoreObject:
             int: Score obtained in the current level
         """
 
-        return self.score - self.prev_level_score
+        return self._score - self.prev_level_score
 
     @property
     def total_score(self) -> int:
@@ -92,7 +92,7 @@ class ScoreObject:
         """
 
         return (
-            self.current_level_score /
+            self.score /
             (self.next_level_score - self.prev_level_score)
         ) * 100
 
@@ -113,3 +113,19 @@ class ScoreObject:
         """
 
         return f"Level {self.level} (#{self.rank})"
+
+    def __repr__(self) -> str:
+        return (
+            "ScoreObject("
+            f"\n\tmember_id={self.member_id}, "
+            f"\n\tguild_id={self.guild_id}, "
+            f"\n\t_score={self._score}"
+            f"\n\trank={self.rank}, "
+            f"\n\tlevel={self.level}, "
+            f"\n\tscore={self.score}, "
+            f"\n\ttotal_score={self.total_score}, "
+            f"\n\tnext_level_score={self.next_level_score}, "
+            f"\n\tprev_level_score={self.prev_level_score}, "
+            f"\n\tprogress={self.progress}"
+            "\n)"
+        )

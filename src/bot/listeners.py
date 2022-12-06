@@ -91,7 +91,8 @@ class ListenersCog(commands.Cog, name="Event Listeners"):
     async def on_member_join(self, member) -> None:
         """When a member joins a guild"""
 
-        self.add_member(member.id, member.guild.id)
+        if not member.bot:
+            self.add_member(member.id, member.guild.id)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member) -> None:
