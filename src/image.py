@@ -95,13 +95,13 @@ class ScoreboardEditor(ImageEditor):
             raise ValueError("members_and_scores cannot be empty")
 
         width = 30 + ((self.COL_WIDTH + 30) * min(len(members_and_scores), self.MAX_COLS))
-        height = 230 + ((self.COL_HEIGHT + 30) * (len(members_and_scores) // self.MAX_COLS + 1))
+        height = 230 + ((self.COL_HEIGHT + 30) * (len(members_and_scores) // self.MAX_COLS))
 
         canvas = Canvas((width, height))
         super().__init__(canvas, *args, **kwargs)
 
         self.rectangle(
-            (0, 0), width, height, color=BLACK, outline=DARK_GREY, stroke_width=5, radius=20
+            (0, 0), width, height, color=DARK_GREY, outline=LIGHT_GREY, stroke_width=5, radius=20
         )
 
         self.members_and_scores = members_and_scores
@@ -124,6 +124,8 @@ class ScoreboardEditor(ImageEditor):
     async def draw(self) -> None:
         """Draw the scoreboard image"""
 
+        log.debug("drawing scoreboard image")
+
         x_position = 30
         y_position = 230
 
@@ -131,8 +133,7 @@ class ScoreboardEditor(ImageEditor):
 
             await self.draw_member(member, score, (x_position, y_position))
 
-            # BUG: new row created at the end of the loop
-            # TODO: fix this bug
+            log.debug("determining position for next member")
 
             i += 1  # offset by 1 to account for 0 index
 
@@ -142,6 +143,8 @@ class ScoreboardEditor(ImageEditor):
                 continue
 
             x_position += self.COL_WIDTH + 30
+
+            log.debug("position determined to be (%s, %s)", x_position, y_position)
 
         if self.image.width > self.COL_WIDTH * 2:
             self.draw_footer(member.guild)  # pylint: disable=undefined-loop-variable
@@ -154,10 +157,10 @@ class ScoreboardEditor(ImageEditor):
     ) -> None:
         """Draw a certain member onto the scoreboard"""
 
-        self.draw_background(position)
+        self.draw_background(member.colour, position)
         await self.draw_avatar(member, position)
         self.draw_name(member, position)
-        self.draw_level(member, score, position)
+        self.draw_level(score, position)
 
     def draw_footer(self, guild:Guild) -> None:
         """Draw the footer"""
@@ -170,10 +173,38 @@ class ScoreboardEditor(ImageEditor):
             align="center"
         )
 
-    def draw_background(self, position: tuple[int, int]) -> None:
+    def draw_background(self, accent_colour:Colour, position: tuple[int, int]) -> None:
         """Draw the background for the member"""
 
-        self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
+        if accent_colour == Colour.default():
+            accent_colour = Colour.light_grey()
+
+        accent_colour = accent_colour.to_rgb()
+
+        accent_size = 100
+
+        drop_shadow = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color="#0F0F0F80"))
+        drop_shadow.rounded_corners(15)
+        drop_shadow_postion = (position[0] - 10, position[1] + 15)
+        self.paste(drop_shadow, drop_shadow_postion)
+
+        # self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
+        background = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color=BLACK))
+        background.polygon(
+            (
+                # order: top left, bottom left, bottom right, top right
+                (self.COL_WIDTH - accent_size, 0),
+                (self.COL_WIDTH - (accent_size // 2), accent_size // 2),
+                (self.COL_WIDTH, accent_size),
+                (self.COL_WIDTH, 0)
+            ),
+            color=accent_colour
+        )
+
+        background.rounded_corners(15)
+
+        self.paste(background, position)
+
 
     async def draw_avatar(self, member: Member, position: tuple[int, int]) -> None:
         """Draw the avatar for the member"""
@@ -202,23 +233,18 @@ class ScoreboardEditor(ImageEditor):
             log.debug("name is too long, shortening")
             name = name[:15]
 
-        text_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 120)
+        text_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 125)
 
         self.text(
             text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
         )
 
-    def draw_level(self, member: Member, score: ScoreObject, position: int) -> None:
+    def draw_level(self, score: ScoreObject, position: int) -> None:
         """Draw the level for the member"""
 
-        if member.colour == Colour.default():
-            colour = WHITE
-        else:
-            colour = member.colour.to_rgb()
-
-        level_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 60)
+        level_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 70)
         self.text(
-            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=colour, align="center"
+            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
         )
 
     def antialias(self):
