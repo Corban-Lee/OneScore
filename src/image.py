@@ -131,6 +131,9 @@ class ScoreboardEditor(ImageEditor):
 
             await self.draw_member(member, score, (x_position, y_position))
 
+            # BUG: new row created at the end of the loop
+            # TODO: fix this bug
+
             i += 1  # offset by 1 to account for 0 index
 
             if i % self.MAX_COLS == 0:
