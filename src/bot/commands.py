@@ -142,7 +142,7 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         scores = db.records(
             "SELECT member_id, score FROM scores "
-            "WHERE guild_id = ? ORDER BY score DESC LIMIT 10",
+            "WHERE guild_id = ? ORDER BY score DESC LIMIT 18",
             guild.id
         )
 
@@ -153,7 +153,7 @@ class CommandsCog(commands.Cog, name="Score Commands"):
             )
             for member_id, score in scores
         ]
-        print(members_and_scores)
+
         scoreboard_image_editor = ScoreboardEditor(members_and_scores)
         await scoreboard_image_editor.draw()
         return scoreboard_image_editor.to_file()

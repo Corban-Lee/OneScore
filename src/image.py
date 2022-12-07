@@ -4,7 +4,7 @@ import logging
 from functools import cache
 from abc import ABC, abstractmethod
 
-from discord import Status, Colour, File, Member
+from discord import Status, Colour, File, Member, Guild
 from easy_pil import Editor, Canvas, Text, load_image_async
 from PIL import Image
 
@@ -16,7 +16,8 @@ from constants import (
     LIGHT_GREY,
     DARK_GREY,
     POPPINS,
-    POPPINS_SMALL
+    POPPINS_SMALL,
+    POPPINS_XSMALL
 )
 
 
@@ -83,20 +84,29 @@ class ImageEditor(Editor, ABC):
 class ScoreboardEditor(ImageEditor):
     """The image editor for the scoreboard image"""
 
-    # THIS CLASS WAS CREATED BY GITHUB COPILOT WITH MINOR TWEAKS TO FIX ERRORS
-    # TODO: REWRITE THIS CLASS FROM THE GROUND UP, THIS ONE WAS JUST A CONCEPT TEST
-
-    __slots__ = ()
+    __slots__ = ("members_and_scores", )
+    COL_WIDTH = 400
+    COL_HEIGHT = 400
+    MAX_COLS = 6
 
     def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
 
-        width = 440 * len(members_and_scores)
-        canvas = Canvas((width, 440), color=BLACK)
+        if not members_and_scores:
+            raise ValueError("members_and_scores cannot be empty")
+
+        width = 30 + ((self.COL_WIDTH + 30) * min(len(members_and_scores), self.MAX_COLS))
+        height = 230 + ((self.COL_HEIGHT + 30) * (len(members_and_scores) // self.MAX_COLS + 1))
+
+        canvas = Canvas((width, height))
         super().__init__(canvas, *args, **kwargs)
+
+        self.rectangle(
+            (0, 0), width, height, color=BLACK, outline=DARK_GREY, stroke_width=5, radius=20
+        )
 
         self.members_and_scores = members_and_scores
 
-    def to_file(self, filename: str = "scoreboard.png") -> File:
+    def to_file(self, filename: str=None) -> File:
         """Save the image to a file
 
         Args:
@@ -107,73 +117,106 @@ class ScoreboardEditor(ImageEditor):
 
         return File(
             self.image_bytes,
-            filename=filename or "image.png",
+            filename=filename or "scoreboard.png",
             description="Level card image"
         )
 
     async def draw(self) -> None:
         """Draw the scoreboard image"""
 
-        for i, (member, score) in enumerate(self.members_and_scores):
-            await self.draw_member(member, score, i)
+        x_position = 30
+        y_position = 230
 
+        for i, (member, score) in enumerate(self.members_and_scores):
+
+            await self.draw_member(member, score, (x_position, y_position))
+
+            i += 1  # offset by 1 to account for 0 index
+
+            if i % self.MAX_COLS == 0:
+                y_position += self.COL_HEIGHT + 30
+                x_position = 30
+                continue
+
+            x_position += self.COL_WIDTH + 30
+
+        if self.image.width > self.COL_WIDTH * 2:
+            self.draw_footer(member.guild)  # pylint: disable=undefined-loop-variable
+
+        self.rounded_corners(20)
         self.antialias()
 
-    async def draw_member(self, member: Member, score: ScoreObject, index: int) -> None:
+    async def draw_member(
+        self, member: Member, score: ScoreObject, position: tuple[int, int]
+    ) -> None:
         """Draw a certain member onto the scoreboard"""
 
-        # Draw the background
-        self.draw_background(index)
+        self.draw_background(position)
+        await self.draw_avatar(member, position)
+        self.draw_name(member, position)
+        self.draw_level(member, score, position)
 
-        # Draw the avatar
-        await self.draw_avatar(member, index)
+    def draw_footer(self, guild:Guild) -> None:
+        """Draw the footer"""
 
-        # Draw the status
-        self.draw_status(member, index)
+        self.text(
+            (self.image.width // 2, 90),
+            f"Scoreboard @ {guild.name}",
+            font=POPPINS,
+            color=WHITE,
+            align="center"
+        )
 
-        # Draw the name
-        self.draw_name(member, index)
-
-        # Draw the score
-        self.draw_score(score, index)
-
-    def draw_background(self, index: int) -> None:
+    def draw_background(self, position: tuple[int, int]) -> None:
         """Draw the background for the member"""
 
-        x = 440 * index
-        self.rectangle((x, 0), width=440, height=440, color=DARK_GREY)
+        self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
 
-    async def draw_avatar(self, member: Member, index: int) -> None:
+    async def draw_avatar(self, member: Member, position: tuple[int, int]) -> None:
         """Draw the avatar for the member"""
 
-        x = 440 * index
         avatar = await load_image_async(member.display_avatar.url)
-        avatar = avatar.resize((300, 300))
+        avatar = avatar.resize((220, 220))
 
-        self.image.paste(avatar, (x + 70, 70))
+        avatar_position = (
+            position[0] + (self.COL_WIDTH // 2) - (avatar.width // 2),
+            position[1] + (self.COL_HEIGHT // 2) - ((avatar.height // 2) + 60)
+        )
 
-    def draw_status(self, member: Member, index: int) -> None:
-        """Draw the status for the member"""
+        self.paste(
+            Editor(avatar).circle_image(),
+            avatar_position
+        )
 
-        x = 400 * index
-        status_colour, status_image, status_position = get_status(member.status)
-
-        if status_image:
-            self.image.paste(status_image.image, (x + status_position[0], status_position[1]))
-
-        self.rectangle((x, 0), width=440, height=440, outline=status_colour.to_rgb())
-
-    def draw_name(self, member: Member, index: int) -> None:
+    def draw_name(self, member: Member, position: tuple[int, int]) -> None:
         """Draw the name for the member"""
 
-        x = 440 * index
-        self.text((x + 70, 380), member.display_name, font=POPPINS, color=WHITE)
+        name = member.display_name
+        discriminator = f"#{member.discriminator}"
 
-    def draw_score(self, score: ScoreObject, index: int) -> None:
-        """Draw the score for the member"""
+        # Prevent the name text from overflowing
+        if len(name) > 15:
+            log.debug("name is too long, shortening")
+            name = name[:15]
 
-        x = 440 * index
-        self.text((x + 70, 450), humanize_number(score.score), font=POPPINS_SMALL, color=WHITE)
+        text_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 120)
+
+        self.text(
+            text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
+        )
+
+    def draw_level(self, member: Member, score: ScoreObject, position: int) -> None:
+        """Draw the level for the member"""
+
+        if member.colour == Colour.default():
+            colour = WHITE
+        else:
+            colour = member.colour.to_rgb()
+
+        level_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 60)
+        self.text(
+            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=colour, align="center"
+        )
 
     def antialias(self):
         """Antialias the image, also halves the image size due
