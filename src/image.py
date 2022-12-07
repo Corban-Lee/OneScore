@@ -90,15 +90,22 @@ class ScoreboardEditor(ImageEditor):
     __slots__ = ("members_and_scores", )
     COL_WIDTH = 400
     COL_HEIGHT = 400
+    HEAD_HEIGHT = 200
+    MARGIN = 60
     MAX_COLS = 6
+    SHADOW_OFFSET = (-10, 15)
 
     def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
 
         if not members_and_scores:
             raise ValueError("members_and_scores cannot be empty")
 
-        width = 30 + ((self.COL_WIDTH + 30) * min(len(members_and_scores), self.MAX_COLS))
-        height = 230 + ((self.COL_HEIGHT + 30) * (len(members_and_scores) // self.MAX_COLS))
+        width = self.MARGIN + (
+            (self.COL_WIDTH + self.MARGIN) * min(len(members_and_scores), self.MAX_COLS)
+        )
+        height = self.HEAD_HEIGHT + self.MARGIN + (
+            (self.COL_HEIGHT + self.MARGIN) * (len(members_and_scores) // self.MAX_COLS)
+        )
 
         canvas = Canvas((width, height))
         super().__init__(canvas, *args, **kwargs)
@@ -129,8 +136,8 @@ class ScoreboardEditor(ImageEditor):
 
         log.debug("drawing scoreboard image")
 
-        x_position = 30
-        y_position = 230
+        x_position = self.MARGIN
+        y_position = self.HEAD_HEIGHT + self.MARGIN
         queue = []
         done = []
 
@@ -157,11 +164,11 @@ class ScoreboardEditor(ImageEditor):
             i += 1  # offset by 1 to account for 0 index
 
             if i % self.MAX_COLS == 0:
-                y_position += self.COL_HEIGHT + 30
-                x_position = 30
+                y_position += self.COL_HEIGHT + self.MARGIN
+                x_position = self.MARGIN
                 continue
 
-            x_position += self.COL_WIDTH + 30
+            x_position += self.COL_WIDTH + self.MARGIN
 
             log.debug("position determined to be (%s, %s)", x_position, y_position)
 
@@ -177,7 +184,7 @@ class ScoreboardEditor(ImageEditor):
             self.paste(member_image, (position[0]-10, position[1]))
 
         if self.image.width > self.COL_WIDTH * 2:
-            self.draw_footer(member.guild)  # pylint: disable=undefined-loop-variable
+            await self.draw_header(member.guild)  # pylint: disable=undefined-loop-variable
 
         self.rounded_corners(20)
         self.antialias()
@@ -196,15 +203,33 @@ class ScoreboardEditor(ImageEditor):
 
         return member_editor
 
-    def draw_footer(self, guild:Guild) -> None:
+    async def draw_header(self, guild:Guild) -> None:
         """Draw the footer"""
 
+        title_cordinates = (self.MARGIN, self.MARGIN + 25)
+
+        if guild.icon:
+            guild_icon = await load_image_async(guild.icon.url)
+            guild_icon = Editor(guild_icon.resize((100, 100))).circle_image()
+            self.paste(guild_icon, (self.MARGIN, self.MARGIN))
+            title_cordinates = (100 + (self.MARGIN * 2), title_cordinates[1])
+
         self.text(
-            (self.image.width // 2, 90),
-            f"Scoreboard @ {guild.name}",
+            title_cordinates,
+            f"{guild.name}",
             font=POPPINS,
             color=WHITE,
-            align="center"
+            align="left"
+        )
+
+        member_count_cordinates = (self.image.width - self.MARGIN, title_cordinates[1] + 10)
+
+        self.text(
+            member_count_cordinates,
+            f"Showing {len(self.members_and_scores)} of {guild.member_count} members",
+            font=POPPINS_SMALL,
+            color=WHITE,
+            align="right"
         )
 
     def draw_background(self, editor: Editor, accent_colour:Colour) -> None:
