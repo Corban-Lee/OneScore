@@ -454,7 +454,7 @@ class ScoreEditor(ImageEditor):
         texts = (
             Text(humanize_number(self.score.score), font=POPPINS_SMALL, color=WHITE),
             Text(
-                f"/ {humanize_number(self.score.next_level_score)} XP",
+                f"/ {humanize_number(self.score.next_level_score-self.score.total_score)} XP",
                 font=POPPINS_SMALL, color=LIGHT_GREY
             )
         )
