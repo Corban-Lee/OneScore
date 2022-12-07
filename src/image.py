@@ -130,22 +130,24 @@ class ScoreboardEditor(ImageEditor):
 
         x_position = 30
         y_position = 230
-        threads = []
+        queue = []
+        done = []
 
-        def between_callback(*args):
+        def between_callback(position, *args):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            loop.run_until_complete(self.draw_member(*args))
+            member_image = loop.run_until_complete(self.draw_member(*args))
             loop.close()
+            done.append((member_image, position))
 
         for i, (member, score) in enumerate(self.members_and_scores):
 
             # await self.draw_member(member, score, (x_position, y_position))
-            threads.append(
+            queue.append(
                 Thread(
                     target=between_callback,
-                    args=(member, score, (x_position, y_position))
+                    args=((x_position, y_position), member, score)
                 )
             )
 
@@ -162,11 +164,16 @@ class ScoreboardEditor(ImageEditor):
 
             log.debug("position determined to be (%s, %s)", x_position, y_position)
 
-        for thread in threads:
+        for thread in queue:
             thread.start()
 
-        for thread in threads:
+        for thread in queue:
             thread.join()
+
+        for member_image, position in done:
+
+            print(member_image.image.size)
+            self.paste(member_image, (position[0]-10, position[1]))
 
         if self.image.width > self.COL_WIDTH * 2:
             self.draw_footer(member.guild)  # pylint: disable=undefined-loop-variable
@@ -174,15 +181,19 @@ class ScoreboardEditor(ImageEditor):
         self.rounded_corners(20)
         self.antialias()
 
-    async def draw_member(
-        self, member: Member, score: ScoreObject, position: tuple[int, int]
-    ) -> None:
+    async def draw_member(self, member: Member, score: ScoreObject) -> None:
         """Draw a certain member onto the scoreboard"""
 
-        self.draw_background(member.colour, position)
-        await self.draw_avatar(member, position)
-        self.draw_name(member, position)
-        self.draw_level(score, position)
+        log.debug("drawing member %s", member)
+
+        member_editor = Editor(Canvas((self.COL_WIDTH + 10, self.COL_HEIGHT + 15)))
+
+        self.draw_background(member_editor, member.colour)
+        await self.draw_avatar(member_editor, member)
+        self.draw_name(member_editor, member)
+        self.draw_level(member_editor, score)
+
+        return member_editor
 
     def draw_footer(self, guild:Guild) -> None:
         """Draw the footer"""
@@ -195,7 +206,7 @@ class ScoreboardEditor(ImageEditor):
             align="center"
         )
 
-    def draw_background(self, accent_colour:Colour, position: tuple[int, int]) -> None:
+    def draw_background(self, editor: Editor, accent_colour:Colour) -> None:
         """Draw the background for the member"""
 
         if accent_colour == Colour.default():
@@ -207,8 +218,8 @@ class ScoreboardEditor(ImageEditor):
 
         drop_shadow = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color="#0F0F0F80"))
         drop_shadow.rounded_corners(15)
-        drop_shadow_postion = (position[0] - 10, position[1] + 15)
-        self.paste(drop_shadow, drop_shadow_postion)
+        drop_shadow_postion = (0, 15)
+        editor.paste(drop_shadow, drop_shadow_postion)
 
         # self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
         background = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color=BLACK))
@@ -222,29 +233,27 @@ class ScoreboardEditor(ImageEditor):
             ),
             color=accent_colour
         )
-
         background.rounded_corners(15)
 
-        self.paste(background, position)
+        editor.paste(background, (10, 0))
 
-
-    async def draw_avatar(self, member: Member, position: tuple[int, int]) -> None:
+    async def draw_avatar(self, editor: Editor, member: Member) -> None:
         """Draw the avatar for the member"""
 
         avatar = await load_image_async(member.display_avatar.url)
         avatar = avatar.resize((220, 220))
 
         avatar_position = (
-            position[0] + (self.COL_WIDTH // 2) - (avatar.width // 2),
-            position[1] + (self.COL_HEIGHT // 2) - ((avatar.height // 2) + 60)
+            (self.COL_WIDTH // 2) - (avatar.width // 2) + 10,  # drop shadow offset
+            (self.COL_HEIGHT // 2) - ((avatar.height // 2) + 60)
         )
 
-        self.paste(
+        editor.paste(
             Editor(avatar).circle_image(),
             avatar_position
         )
 
-    def draw_name(self, member: Member, position: tuple[int, int]) -> None:
+    def draw_name(self, editor: Editor, member: Member) -> None:
         """Draw the name for the member"""
 
         name = member.display_name
@@ -255,17 +264,17 @@ class ScoreboardEditor(ImageEditor):
             log.debug("name is too long, shortening")
             name = name[:15]
 
-        text_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 125)
+        text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
 
-        self.text(
+        editor.text(
             text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
         )
 
-    def draw_level(self, score: ScoreObject, position: int) -> None:
+    def draw_level(self, editor: Editor, score: ScoreObject) -> None:
         """Draw the level for the member"""
 
-        level_position = (position[0] + (self.COL_WIDTH // 2), position[1] + self.COL_HEIGHT - 70)
-        self.text(
+        level_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 70)
+        editor.text(
             level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
         )
 
