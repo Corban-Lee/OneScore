@@ -4,7 +4,7 @@ import logging
 import asyncio
 from functools import cache
 from abc import ABC, abstractmethod
-from threading import Thread
+from threading import Thread, Lock
 
 from discord import Status, Colour, File, Member, Guild
 from easy_pil import Editor, Canvas, Text, load_image_async
@@ -24,6 +24,7 @@ from constants import (
 
 
 log = logging.getLogger(__name__)
+lock = Lock()
 
 @cache
 def get_status(status, /) -> tuple[Colour, Editor, tuple[int, int]]:
@@ -273,10 +274,14 @@ class ScoreboardEditor(ImageEditor):
     def draw_level(self, editor: Editor, score: ScoreObject) -> None:
         """Draw the level for the member"""
 
+        lock.acquire(True, timeout=5)
+
         level_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 70)
         editor.text(
             level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
         )
+
+        lock.release()
 
     def antialias(self):
         """Antialias the image, also halves the image size due
