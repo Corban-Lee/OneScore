@@ -1,8 +1,10 @@
 """Draw images to send to the user"""
 
 import logging
+import asyncio
 from functools import cache
 from abc import ABC, abstractmethod
+from threading import Thread
 
 from discord import Status, Colour, File, Member, Guild
 from easy_pil import Editor, Canvas, Text, load_image_async
@@ -128,10 +130,24 @@ class ScoreboardEditor(ImageEditor):
 
         x_position = 30
         y_position = 230
+        threads = []
+
+        def between_callback(*args):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            loop.run_until_complete(self.draw_member(*args))
+            loop.close()
 
         for i, (member, score) in enumerate(self.members_and_scores):
 
-            await self.draw_member(member, score, (x_position, y_position))
+            # await self.draw_member(member, score, (x_position, y_position))
+            threads.append(
+                Thread(
+                    target=between_callback,
+                    args=(member, score, (x_position, y_position))
+                )
+            )
 
             log.debug("determining position for next member")
 
@@ -145,6 +161,12 @@ class ScoreboardEditor(ImageEditor):
             x_position += self.COL_WIDTH + 30
 
             log.debug("position determined to be (%s, %s)", x_position, y_position)
+
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join()
 
         if self.image.width > self.COL_WIDTH * 2:
             self.draw_footer(member.guild)  # pylint: disable=undefined-loop-variable
