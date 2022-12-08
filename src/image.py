@@ -18,6 +18,7 @@ from constants import (
     LIGHT_GREY,
     DARK_GREY,
     POPPINS,
+    POPPINS_LARGE,
     POPPINS_SMALL,
     POPPINS_XSMALL
 )
@@ -88,11 +89,11 @@ class ScoreboardEditor(ImageEditor):
     """The image editor for the scoreboard image"""
 
     __slots__ = ("members_and_scores", )
-    COL_WIDTH = 400
-    COL_HEIGHT = 400
+    COL_WIDTH = 450
+    COL_HEIGHT = 500
     HEAD_HEIGHT = 200
     MARGIN = 60
-    MAX_COLS = 6
+    MAX_COLS = 5
     SHADOW_OFFSET = (-10, 15)
 
     def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
@@ -179,8 +180,6 @@ class ScoreboardEditor(ImageEditor):
             thread.join()
 
         for member_image, position in done:
-
-            print(member_image.image.size)
             self.paste(member_image, (position[0]+self.SHADOW_OFFSET[0], position[1]))
 
         if self.image.width > self.COL_WIDTH * 2:
@@ -211,18 +210,18 @@ class ScoreboardEditor(ImageEditor):
     async def draw_header(self, guild:Guild) -> None:
         """Draw the footer"""
 
-        title_cordinates = (self.MARGIN, self.MARGIN + 25)
+        title_cordinates = (self.MARGIN, self.MARGIN + 35)
 
         if guild.icon:
             guild_icon = await load_image_async(guild.icon.url)
-            guild_icon = Editor(guild_icon.resize((100, 100))).circle_image()
+            guild_icon = Editor(guild_icon.resize((150, 150))).circle_image()
             self.paste(guild_icon, (self.MARGIN, self.MARGIN))
-            title_cordinates = (100 + (self.MARGIN * 2), title_cordinates[1])
+            title_cordinates = (150 + (self.MARGIN * 2), title_cordinates[1])
 
         self.text(
             title_cordinates,
             f"{guild.name}",
-            font=POPPINS,
+            font=POPPINS_LARGE,
             color=WHITE,
             align="left"
         )
@@ -288,17 +287,17 @@ class ScoreboardEditor(ImageEditor):
         """Draw the name for the member"""
 
         name = member.display_name
-        discriminator = f"#{member.discriminator}"
 
         # Prevent the name text from overflowing
-        if len(name) > 13:
+        if len(name) > 15:
             log.debug("name is too long, shortening")
-            name = name[:13]
+            name = name[:15]
 
-        text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
+        # text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
+        text_position = ((self.SHADOW_OFFSET[0] * -1) + (self.COL_WIDTH // 2), 340)
 
         editor.text(
-            text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
+            text_position, name, font=POPPINS_SMALL, color=WHITE, align="center"
         )
 
     def draw_level(self, editor: Editor, score: ScoreObject) -> None:
@@ -312,7 +311,7 @@ class ScoreboardEditor(ImageEditor):
             rank_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="left"
         )
 
-        # There is no longer a possible reccursion error - release the GIL
+        # There is no longer a possible reccursion error, release the GIL
         lock.release()
 
         level_position = ((self.SHADOW_OFFSET[0] * -1) + self.COL_WIDTH - 60, rank_position[1])
