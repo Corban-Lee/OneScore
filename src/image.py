@@ -181,7 +181,7 @@ class ScoreboardEditor(ImageEditor):
         for member_image, position in done:
 
             print(member_image.image.size)
-            self.paste(member_image, (position[0]-10, position[1]))
+            self.paste(member_image, (position[0]+self.SHADOW_OFFSET[0], position[1]))
 
         if self.image.width > self.COL_WIDTH * 2:
             await self.draw_header(member.guild)  # pylint: disable=undefined-loop-variable
@@ -194,7 +194,12 @@ class ScoreboardEditor(ImageEditor):
 
         log.debug("drawing member %s", member)
 
-        member_editor = Editor(Canvas((self.COL_WIDTH + 10, self.COL_HEIGHT + 15)))
+        member_editor = Editor(Canvas(
+            (
+                self.COL_WIDTH + (self.SHADOW_OFFSET[0] * -1),
+                self.COL_HEIGHT + self.SHADOW_OFFSET[1])
+            )
+        )
 
         self.draw_background(member_editor, member.colour)
         await self.draw_avatar(member_editor, member)
@@ -244,7 +249,7 @@ class ScoreboardEditor(ImageEditor):
 
         drop_shadow = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color="#0F0F0F80"))
         drop_shadow.rounded_corners(15)
-        drop_shadow_postion = (0, 15)
+        drop_shadow_postion = (0, self.SHADOW_OFFSET[1])
         editor.paste(drop_shadow, drop_shadow_postion)
 
         # self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
@@ -286,9 +291,9 @@ class ScoreboardEditor(ImageEditor):
         discriminator = f"#{member.discriminator}"
 
         # Prevent the name text from overflowing
-        if len(name) > 15:
+        if len(name) > 13:
             log.debug("name is too long, shortening")
-            name = name[:15]
+            name = name[:13]
 
         text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
 
@@ -299,14 +304,21 @@ class ScoreboardEditor(ImageEditor):
     def draw_level(self, editor: Editor, score: ScoreObject) -> None:
         """Draw the level for the member"""
 
+        # We need the GIL to prevent a reccursion error
         lock.acquire(True, timeout=5)
 
-        level_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 70)
+        rank_position = ((self.SHADOW_OFFSET[0] * -1) + 60, self.COL_HEIGHT - 70)
         editor.text(
-            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
+            rank_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="left"
         )
 
+        # There is no longer a possible reccursion error - release the GIL
         lock.release()
+
+        level_position = ((self.SHADOW_OFFSET[0] * -1) + self.COL_WIDTH - 60, rank_position[1])
+        editor.text(
+            level_position, f"LVL {humanize_number(score.level, whole=True)}", font=POPPINS_SMALL, color=WHITE, align="right"
+        )
 
     def antialias(self):
         """Antialias the image, also halves the image size due
