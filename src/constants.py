@@ -13,6 +13,7 @@ BLACK = "#0F0F0F"
 WHITE = "#F9F9F9"
 DARK_GREY = "#2F2F2F"
 LIGHT_GREY = "#9F9F9F"
+POPPINS_LARGE = Font.poppins(size=100)
 POPPINS = Font.poppins(size=70)
 POPPINS_SMALL = Font.poppins(size=50)
 POPPINS_XSMALL = Font.poppins(size=35)

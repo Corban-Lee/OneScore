@@ -18,14 +18,14 @@ class Bot(commands.Bot):
 
     def __init__(self):
         super().__init__(
-            command_prefix="ob ",
+            command_prefix="os ",
             intents=discord.Intents.all()
         )
 
         self.start_time = datetime.utcnow()
         setup_logs()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=10)
     async def _autosave_database(self) -> None:
         """Autosave the database every 5 minutes"""
 

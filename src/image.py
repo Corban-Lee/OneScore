@@ -18,6 +18,7 @@ from constants import (
     LIGHT_GREY,
     DARK_GREY,
     POPPINS,
+    POPPINS_LARGE,
     POPPINS_SMALL,
     POPPINS_XSMALL
 )
@@ -276,11 +277,11 @@ class GridScoreboardEditor(ImageEditor):
     """The image editor for the grid scoreboard image"""
 
     __slots__ = ("members_and_scores", )
-    COL_WIDTH = 400
-    COL_HEIGHT = 400
+    COL_WIDTH = 450
+    COL_HEIGHT = 500
     HEAD_HEIGHT = 200
     MARGIN = 60
-    MAX_COLS = 6
+    MAX_COLS = 5
     SHADOW_OFFSET = (-10, 15)
 
     def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
@@ -367,9 +368,7 @@ class GridScoreboardEditor(ImageEditor):
             thread.join()
 
         for member_image, position in done:
-
-            print(member_image.image.size)
-            self.paste(member_image, (position[0]-10, position[1]))
+            self.paste(member_image, (position[0]+self.SHADOW_OFFSET[0], position[1]))
 
         if self.image.width > self.COL_WIDTH * 2:
             await self.draw_header(member.guild)  # pylint: disable=undefined-loop-variable
@@ -382,7 +381,12 @@ class GridScoreboardEditor(ImageEditor):
 
         log.debug("drawing member %s", member)
 
-        member_editor = Editor(Canvas((self.COL_WIDTH + 10, self.COL_HEIGHT + 15)))
+        member_editor = Editor(Canvas(
+            (
+                self.COL_WIDTH + (self.SHADOW_OFFSET[0] * -1),
+                self.COL_HEIGHT + self.SHADOW_OFFSET[1])
+            )
+        )
 
         self.draw_background(member_editor, member.colour)
         await self.draw_avatar(member_editor, member)
@@ -394,18 +398,18 @@ class GridScoreboardEditor(ImageEditor):
     async def draw_header(self, guild:Guild) -> None:
         """Draw the footer"""
 
-        title_cordinates = (self.MARGIN, self.MARGIN + 25)
+        title_cordinates = (self.MARGIN, self.MARGIN + 35)
 
         if guild.icon:
             guild_icon = await load_image_async(guild.icon.url)
-            guild_icon = Editor(guild_icon.resize((100, 100))).circle_image()
+            guild_icon = Editor(guild_icon.resize((150, 150))).circle_image()
             self.paste(guild_icon, (self.MARGIN, self.MARGIN))
-            title_cordinates = (100 + (self.MARGIN * 2), title_cordinates[1])
+            title_cordinates = (150 + (self.MARGIN * 2), title_cordinates[1])
 
         self.text(
             title_cordinates,
             f"{guild.name}",
-            font=POPPINS,
+            font=POPPINS_LARGE,
             color=WHITE,
             align="left"
         )
@@ -432,7 +436,7 @@ class GridScoreboardEditor(ImageEditor):
 
         drop_shadow = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color="#0F0F0F80"))
         drop_shadow.rounded_corners(15)
-        drop_shadow_postion = (0, 15)
+        drop_shadow_postion = (0, self.SHADOW_OFFSET[1])
         editor.paste(drop_shadow, drop_shadow_postion)
 
         # self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
@@ -471,30 +475,37 @@ class GridScoreboardEditor(ImageEditor):
         """Draw the name for the member"""
 
         name = member.display_name
-        discriminator = f"#{member.discriminator}"
 
         # Prevent the name text from overflowing
         if len(name) > 15:
             log.debug("name is too long, shortening")
             name = name[:15]
 
-        text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
+        # text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
+        text_position = ((self.SHADOW_OFFSET[0] * -1) + (self.COL_WIDTH // 2), 340)
 
         editor.text(
-            text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
+            text_position, name, font=POPPINS_SMALL, color=WHITE, align="center"
         )
 
     def draw_level(self, editor: Editor, score: ScoreObject) -> None:
         """Draw the level for the member"""
 
+        # We need the GIL to prevent a reccursion error
         lock.acquire(True, timeout=5)
 
-        level_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 70)
+        rank_position = ((self.SHADOW_OFFSET[0] * -1) + 60, self.COL_HEIGHT - 70)
         editor.text(
-            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
+            rank_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="left"
         )
 
+        # There is no longer a possible reccursion error, release the GIL
         lock.release()
+
+        level_position = ((self.SHADOW_OFFSET[0] * -1) + self.COL_WIDTH - 60, rank_position[1])
+        editor.text(
+            level_position, f"LVL {humanize_number(score.level, whole=True)}", font=POPPINS_SMALL, color=WHITE, align="right"
+        )
 
     def antialias(self):
         """Antialias the image, also halves the image size due
