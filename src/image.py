@@ -84,8 +84,196 @@ class ImageEditor(Editor, ABC):
         """Create and return a discord.File of the image"""
 
 
-class ScoreboardEditor(ImageEditor):
-    """The image editor for the scoreboard image"""
+class ListScoreboardEditor(ImageEditor):
+    """The image editor for the list scoreboard image"""
+
+    __slots__ = ("members_and_scores", )
+    COL_WIDTH = 3250
+    COL_HEIGHT = 300
+    MARGIN = 60
+
+    def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
+
+        if not members_and_scores:
+            raise ValueError("members_and_scores cannot be empty")
+
+        width = self.COL_WIDTH + (self.MARGIN * 2)
+        height = ((self.COL_HEIGHT + self.MARGIN) * len(members_and_scores)) + self.MARGIN
+
+        canvas = Canvas((width, height))
+        super().__init__(canvas, *args, **kwargs)
+
+        self.rectangle(
+            (0, 0), width, height, color=DARK_GREY, outline=LIGHT_GREY, stroke_width=5, radius=20
+        )
+
+        self.members_and_scores = members_and_scores
+
+    def to_file(self, filename: str=None) -> File:
+        """Save the image to a file
+
+        Args:
+            filename (str): The filename, defaults to "scoreboard.png"
+
+        Returns:
+            File: The file"""
+
+        return File(
+            self.image_bytes,
+            filename=filename or "scoreboard.png",
+            description="Level card image"
+        )
+
+    async def draw(self) -> None:
+        """Draw the scoreboard image"""
+
+        log.debug("drawing scoreboard image")
+
+        x_position = y_position = self.MARGIN
+        queue = []
+        done = []
+
+        def between_callback(position, *args):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            member_image = loop.run_until_complete(self.draw_member(*args))
+            loop.close()
+            done.append((member_image, position))
+
+        for i, (member, score) in enumerate(self.members_and_scores):
+
+            # await self.draw_member(member, score, (x_position, y_position))
+            queue.append(
+                Thread(
+                    target=between_callback,
+                    args=((x_position, y_position), member, score)
+                )
+            )
+
+            log.debug("determining position for next member")
+
+            i += 1  # offset by 1 to account for 0 index
+
+            y_position += self.COL_HEIGHT + self.MARGIN
+
+            log.debug("position determined to be (%s, %s)", x_position, y_position)
+
+        for thread in queue:
+            thread.start()
+
+        for thread in queue:
+            thread.join()
+
+        for member_image, position in done:
+            self.paste(member_image, (position[0], position[1]))
+
+        self.rounded_corners(20)
+        self.antialias()
+
+    async def draw_member(self, member: Member, score: ScoreObject) -> None:
+        """Draw a certain member onto the scoreboard"""
+
+        log.debug("drawing member %s", member)
+
+        member_editor = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT)))
+
+        self.draw_background(member_editor, member.colour)
+        await self.draw_avatar(member_editor, member)
+        # self.draw_name(member_editor, member)
+        # self.draw_level(member_editor, score)
+
+        return member_editor
+
+    def draw_background(self, editor: Editor, accent_colour:Colour) -> None:
+        """Draw the background for the member"""
+
+        if accent_colour == Colour.default():
+            accent_colour = Colour.light_grey()
+
+        accent_colour = accent_colour.to_rgb()
+        accent_size = 270
+
+        background = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color=BLACK))
+        background.polygon(
+            (
+                # order: top left, bottom left, bottom right, top right
+                (accent_size, 0),
+                ((accent_size // 2), accent_size // 2),
+                (0, accent_size),
+                (0, 0)
+            ),
+            color=accent_colour
+        )
+        background.rounded_corners(30)
+        editor.paste(background, (0, 0))
+
+    async def draw_avatar(self, editor: Editor, member: Member) -> None:
+        """Draw the avatar for the member"""
+
+        size = int(self.COL_HEIGHT * 0.8)
+
+        avatar = await load_image_async(member.display_avatar.url)
+        avatar = avatar.resize((size, size))
+
+        position = (self.COL_HEIGHT - size) // 2
+
+        editor.paste(
+            Editor(avatar).circle_image(),
+            (position, position)
+        )
+
+    def draw_name(self, editor: Editor, member: Member) -> None:
+        """Draw the name for the member"""
+
+        name = member.display_name
+        discriminator = f"#{member.discriminator}"
+
+        # Prevent the name text from overflowing
+        if len(name) > 15:
+            log.debug("name is too long, shortening")
+            name = name[:15]
+
+        text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
+
+        editor.text(
+            text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
+        )
+
+    def draw_level(self, editor: Editor, score: ScoreObject) -> None:
+        """Draw the level for the member"""
+
+        lock.acquire(True, timeout=5)
+
+        level_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 70)
+        editor.text(
+            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
+        )
+
+        lock.release()
+
+    def antialias(self):
+        """Antialias the image, also halves the image size due
+        to limitations"""
+
+        self.image = self.image.resize(
+            (self.image.width // 2, self.image.height // 2),
+            Image.ANTIALIAS
+        )
+
+    def antialias(self):
+        """Antialias the image, also halves the image size due
+        to limitations"""
+
+        self.image = self.image.resize(
+            (self.image.width // 2, self.image.height // 2),
+            Image.ANTIALIAS
+        )
+
+
+
+class GridScoreboardEditor(ImageEditor):
+    """The image editor for the grid scoreboard image"""
 
     __slots__ = ("members_and_scores", )
     COL_WIDTH = 400

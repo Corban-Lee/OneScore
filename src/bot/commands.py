@@ -11,7 +11,8 @@ from discord.ext import commands
 
 from db import db
 from score import ScoreObject
-from image import ScoreEditor, ScoreboardEditor
+from image import ScoreEditor, GridScoreboardEditor, ListScoreboardEditor
+from constants import ScoreboardStyles
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ class CommandsCog(commands.Cog, name="Score Commands"):
         await ctx.reply(repr(score_obj))
 
 
-    async def get_scoreboard(self, guild: discord.Guild):
+    async def get_scoreboard(self, guild: discord.Guild, style:ScoreboardStyles):
         """Get the scoreboard of the guild
 
         Args:
@@ -142,7 +143,7 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         scores = db.records(
             "SELECT member_id, score FROM scores "
-            "WHERE guild_id = ? ORDER BY score DESC LIMIT 18",
+            "WHERE guild_id = ? ORDER BY score DESC LIMIT 10",
             guild.id
         )
 
@@ -154,34 +155,50 @@ class CommandsCog(commands.Cog, name="Score Commands"):
             for member_id, score in scores
         ]
 
-        scoreboard_image_editor = ScoreboardEditor(members_and_scores)
+        match style:
+            case ScoreboardStyles.Grid:
+                scoreboard_image_editor = GridScoreboardEditor(members_and_scores)
+            case ScoreboardStyles.List:
+                scoreboard_image_editor = ListScoreboardEditor(members_and_scores)
+            case _:
+                raise ValueError("Invalid scoreboard style provided.")
+
         await scoreboard_image_editor.draw()
         return scoreboard_image_editor.to_file()
 
-    async def respond_with_scoreboard(self, inter: Inter, guild: discord.Guild):
+    async def respond_with_scoreboard(
+        self, inter: Inter, guild: discord.Guild, style:ScoreboardStyles
+    ):
         """Respond with the scoreboard of the guild to an interaction
 
         Args:
             inter (Inter): The interaction
             guild (discord.Guild): The guild
+            style (ScoreboardStyles): The style of the scoreboard
         """
 
         await inter.response.defer(thinking=True)
 
-        scoreboard_image_file = await self.get_scoreboard(guild)
+        scoreboard_image_file = await self.get_scoreboard(guild, style)
         await inter.followup.send(file=scoreboard_image_file)
 
     @app_commands.command(name="scoreboard")
-    async def _scoreboard(self, inter: Inter):
-        """Get the scoreboard of the guild"""
+    async def _scoreboard(self, inter: Inter, style:ScoreboardStyles=ScoreboardStyles.Grid):
+        """Get the scoreboard of the guild
 
-        await self.respond_with_scoreboard(inter, inter.guild)
+        Args:
+            style (ScoreboardStyles): The style of the scoreboard
+        """
+
+        await self.respond_with_scoreboard(inter, inter.guild, style)
 
     @commands.command(name="scoreboard")
-    async def _scoreboard_normal_cmd(self, ctx: commands.Context):
+    async def _scoreboard_normal_cmd(
+        self, ctx: commands.Context, style:ScoreboardStyles=ScoreboardStyles.Grid
+    ):
         """Get the scoreboard of the guild"""
 
-        scoreboard_image_file = await self.get_scoreboard(ctx.guild)
+        scoreboard_image_file = await self.get_scoreboard(ctx.guild, style)
         await ctx.reply(file=scoreboard_image_file)
 
 

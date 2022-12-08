@@ -16,3 +16,9 @@ LIGHT_GREY = "#9F9F9F"
 POPPINS = Font.poppins(size=70)
 POPPINS_SMALL = Font.poppins(size=50)
 POPPINS_XSMALL = Font.poppins(size=35)
+
+from enum import Enum, auto
+
+class ScoreboardStyles(Enum):
+    Grid = auto()
+    List = auto()
