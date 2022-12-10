@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from db import db
 from score import ScoreObject
-from image import ScoreEditor, GridScoreboardEditor, ListScoreboardEditor
+from image import ScoreEditor, GridScoreboardEditor
 from constants import ScoreboardStyles
 
 log = logging.getLogger(__name__)
@@ -156,7 +156,7 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         scores = db.records(
             "SELECT member_id, score FROM scores "
-            "WHERE guild_id = ? ORDER BY score DESC LIMIT 10",
+            "WHERE guild_id = ? ORDER BY score DESC LIMIT 30",
             guild.id
         )
 
@@ -171,8 +171,8 @@ class CommandsCog(commands.Cog, name="Score Commands"):
         match style:
             case ScoreboardStyles.Grid:
                 scoreboard_image_editor = GridScoreboardEditor(members_and_scores)
-            case ScoreboardStyles.List:
-                scoreboard_image_editor = ListScoreboardEditor(members_and_scores)
+            # case ScoreboardStyles.List:
+            #     scoreboard_image_editor = ListScoreboardEditor(members_and_scores)
             case _:
                 raise ValueError("Invalid scoreboard style provided.")
 

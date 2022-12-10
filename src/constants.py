@@ -18,6 +18,14 @@ POPPINS = Font.poppins(size=70)
 POPPINS_SMALL = Font.poppins(size=50)
 POPPINS_XSMALL = Font.poppins(size=35)
 
+# Scoreboard styles
+COL_WIDTH = 450
+COL_HEIGHT = 600
+HEAD_HEIGHT = 200
+MARGIN = 60
+SHADOW_OFFSET_X = -10
+SHADOW_OFFSET_Y = 15
+
 from enum import Enum, auto
 
 class ScoreboardStyles(Enum):

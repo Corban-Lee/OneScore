@@ -5,6 +5,7 @@ import asyncio
 from functools import cache
 from abc import ABC, abstractmethod
 from threading import Thread, Lock
+from math import ceil
 
 from discord import Status, Colour, File, Member, Guild
 from easy_pil import Editor, Canvas, Text, load_image_async
@@ -20,7 +21,12 @@ from constants import (
     POPPINS,
     POPPINS_LARGE,
     POPPINS_SMALL,
-    POPPINS_XSMALL
+    COL_WIDTH,
+    COL_HEIGHT,
+    HEAD_HEIGHT,
+    MARGIN,
+    SHADOW_OFFSET_X,
+    SHADOW_OFFSET_Y
 )
 
 
@@ -80,255 +86,97 @@ class ImageEditor(Editor, ABC):
     async def draw(self) -> None:
         """Draw the image"""
 
-    @abstractmethod
-    def to_file(self) -> File:
-        """Create and return a discord.File of the image"""
-
-
-class ListScoreboardEditor(ImageEditor):
-    """The image editor for the list scoreboard image"""
-
-    __slots__ = ("members_and_scores", )
-    COL_WIDTH = 3250
-    COL_HEIGHT = 300
-    MARGIN = 60
-
-    def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
-
-        if not members_and_scores:
-            raise ValueError("members_and_scores cannot be empty")
-
-        width = self.COL_WIDTH + (self.MARGIN * 2)
-        height = ((self.COL_HEIGHT + self.MARGIN) * len(members_and_scores)) + self.MARGIN
-
-        canvas = Canvas((width, height))
-        super().__init__(canvas, *args, **kwargs)
-
-        self.rectangle(
-            (0, 0), width, height, color=DARK_GREY, outline=LIGHT_GREY, stroke_width=5, radius=20
-        )
-
-        self.members_and_scores = members_and_scores
-
     def to_file(self, filename: str=None) -> File:
         """Save the image to a file
 
         Args:
-            filename (str): The filename, defaults to "scoreboard.png"
+            filename (str): The filename, defaults to "image.png"
 
         Returns:
             File: The file"""
 
         return File(
             self.image_bytes,
-            filename=filename or "scoreboard.png",
-            description="Level card image"
+            filename=filename or "image.png",
+            description="OneScore Image"
         )
 
+    def antialias(self):
+        """Antialias the image, also halves the image size due
+        to limitations"""
+
+        self.image = self.image.resize(
+            (self.image.width // 2, self.image.height // 2),
+            Image.ANTIALIAS
+        )
+
+
+class ScoreboardEditor(ImageEditor, ABC):
+    """The image editor for the scoreboard image"""
+
+    __slots__ = ("members_and_scores", )
+
+    COL_WIDTH: int
+    COL_HEIGHT: int
+    MARGIN: int
+
+    @abstractmethod
     async def draw(self) -> None:
         """Draw the scoreboard image"""
 
-        log.debug("drawing scoreboard image")
+    @abstractmethod
+    async def draw_member(self, member: Member, score: ScoreObject) -> Editor:
+        """Draw a member's column/row
 
-        x_position = y_position = self.MARGIN
-        queue = []
-        done = []
+        Args:
+            member (discord.Member): The member
+            score (ScoreObject): The score
+        """
 
-        def between_callback(position, *args):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            member_image = loop.run_until_complete(self.draw_member(*args))
-            loop.close()
-            done.append((member_image, position))
-
-        for i, (member, score) in enumerate(self.members_and_scores):
-
-            # await self.draw_member(member, score, (x_position, y_position))
-            queue.append(
-                Thread(
-                    target=between_callback,
-                    args=((x_position, y_position), member, score)
-                )
-            )
-
-            log.debug("determining position for next member")
-
-            i += 1  # offset by 1 to account for 0 index
-
-            y_position += self.COL_HEIGHT + self.MARGIN
-
-            log.debug("position determined to be (%s, %s)", x_position, y_position)
-
-        for thread in queue:
-            thread.start()
-
-        for thread in queue:
-            thread.join()
-
-        for member_image, position in done:
-            self.paste(member_image, (position[0], position[1]))
-
-        self.rounded_corners(20)
-        self.antialias()
-
-    async def draw_member(self, member: Member, score: ScoreObject) -> None:
-        """Draw a certain member onto the scoreboard"""
-
-        log.debug("drawing member %s", member)
-
-        member_editor = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT)))
-
-        self.draw_background(member_editor, member.colour)
-        await self.draw_avatar(member_editor, member)
-        # self.draw_name(member_editor, member)
-        # self.draw_level(member_editor, score)
-
-        return member_editor
-
-    def draw_background(self, editor: Editor, accent_colour:Colour) -> None:
-        """Draw the background for the member"""
-
-        if accent_colour == Colour.default():
-            accent_colour = Colour.light_grey()
-
-        accent_colour = accent_colour.to_rgb()
-        accent_size = 270
-
-        background = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color=BLACK))
-        background.polygon(
-            (
-                # order: top left, bottom left, bottom right, top right
-                (accent_size, 0),
-                ((accent_size // 2), accent_size // 2),
-                (0, accent_size),
-                (0, 0)
-            ),
-            color=accent_colour
-        )
-        background.rounded_corners(30)
-        editor.paste(background, (0, 0))
-
-    async def draw_avatar(self, editor: Editor, member: Member) -> None:
-        """Draw the avatar for the member"""
-
-        size = int(self.COL_HEIGHT * 0.8)
-
-        avatar = await load_image_async(member.display_avatar.url)
-        avatar = avatar.resize((size, size))
-
-        position = (self.COL_HEIGHT - size) // 2
-
-        editor.paste(
-            Editor(avatar).circle_image(),
-            (position, position)
-        )
-
-    def draw_name(self, editor: Editor, member: Member) -> None:
-        """Draw the name for the member"""
-
-        name = member.display_name
-        discriminator = f"#{member.discriminator}"
-
-        # Prevent the name text from overflowing
-        if len(name) > 15:
-            log.debug("name is too long, shortening")
-            name = name[:15]
-
-        text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
-
-        editor.text(
-            text_position, name + discriminator, font=POPPINS_XSMALL, color=WHITE, align="center"
-        )
-
-    def draw_level(self, editor: Editor, score: ScoreObject) -> None:
-        """Draw the level for the member"""
-
-        lock.acquire(True, timeout=5)
-
-        level_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 70)
-        editor.text(
-            level_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="center"
-        )
-
-        lock.release()
-
-    def antialias(self):
-        """Antialias the image, also halves the image size due
-        to limitations"""
-
-        self.image = self.image.resize(
-            (self.image.width // 2, self.image.height // 2),
-            Image.ANTIALIAS
-        )
-
-    def antialias(self):
-        """Antialias the image, also halves the image size due
-        to limitations"""
-
-        self.image = self.image.resize(
-            (self.image.width // 2, self.image.height // 2),
-            Image.ANTIALIAS
-        )
-
-
-
-class GridScoreboardEditor(ImageEditor):
+class GridScoreboardEditor(ScoreboardEditor):
     """The image editor for the grid scoreboard image"""
 
     __slots__ = ("members_and_scores", )
-    COL_WIDTH = 450
-    COL_HEIGHT = 500
-    HEAD_HEIGHT = 200
-    MARGIN = 60
-    MAX_COLS = 5
-    SHADOW_OFFSET = (-10, 15)
+    MAX_COLS = 6
 
-    def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]], *args, **kwargs):
+    def __init__(self, members_and_scores: list[tuple[Member, ScoreObject]]):
 
         if not members_and_scores:
             raise ValueError("members_and_scores cannot be empty")
 
-        width = self.MARGIN + (
-            (self.COL_WIDTH + self.MARGIN) * min(len(members_and_scores), self.MAX_COLS)
+        self.members_and_scores = members_and_scores
+
+        width = MARGIN + (
+            (COL_WIDTH + MARGIN) *
+            min(len(members_and_scores), self.MAX_COLS)
         )
-        height = self.HEAD_HEIGHT + self.MARGIN + (
-            (self.COL_HEIGHT + self.MARGIN) * (len(members_and_scores) // self.MAX_COLS)
+        height = HEAD_HEIGHT + MARGIN + (
+            (COL_HEIGHT + MARGIN) *
+            ceil(len(members_and_scores) / self.MAX_COLS)
         )
 
         canvas = Canvas((width, height))
-        super().__init__(canvas, *args, **kwargs)
+        super().__init__(canvas)
 
+        # Draw the background
         self.rectangle(
-            (0, 0), width, height, color=DARK_GREY, outline=LIGHT_GREY, stroke_width=5, radius=20
-        )
-
-        self.members_and_scores = members_and_scores
-
-    def to_file(self, filename: str=None) -> File:
-        """Save the image to a file
-
-        Args:
-            filename (str): The filename, defaults to "scoreboard.png"
-
-        Returns:
-            File: The file"""
-
-        return File(
-            self.image_bytes,
-            filename=filename or "scoreboard.png",
-            description="Level card image"
+            (0, 0), width=width, height=height,
+            color=DARK_GREY, outline=LIGHT_GREY,
+            stroke_width=5, radius=100
         )
 
     async def draw(self) -> None:
         """Draw the scoreboard image"""
 
-        log.debug("drawing scoreboard image")
+        log.debug("drawing grid scoreboard")
 
-        x_position = self.MARGIN
-        y_position = self.HEAD_HEIGHT + self.MARGIN
-        queue = []
-        done = []
+        # Position of the first column
+        x_position = MARGIN
+        y_position = HEAD_HEIGHT + MARGIN
+
+        # list of threads and list of thread results
+        thread_queue = []
+        drawn_members: list[Editor, tuple[int, int]] = []
 
         def between_callback(position, *args):
             loop = asyncio.new_event_loop()
@@ -336,75 +184,72 @@ class GridScoreboardEditor(ImageEditor):
 
             member_image = loop.run_until_complete(self.draw_member(*args))
             loop.close()
-            done.append((member_image, position))
+            drawn_members.append((member_image, position))
+
+        # iterate over the members and create a new thread of each one
+        # each thread will draw the member and append it to the drawn_members list
 
         for i, (member, score) in enumerate(self.members_and_scores):
 
-            # await self.draw_member(member, score, (x_position, y_position))
-            queue.append(
-                Thread(
-                    target=between_callback,
-                    args=((x_position, y_position), member, score)
-                )
-            )
+            position = (x_position, y_position)
+            thread = Thread(target=between_callback, args=(position, member, score))
+            thread_queue.append(thread)
 
-            log.debug("determining position for next member")
+            # calculate the position for the next member in the loop
 
-            i += 1  # offset by 1 to account for 0 index
+            i += 1  # i is 0 indexed
 
+            # if the current column is the last column, move to the next row
             if i % self.MAX_COLS == 0:
-                y_position += self.COL_HEIGHT + self.MARGIN
-                x_position = self.MARGIN
+                y_position += COL_HEIGHT + MARGIN
+                x_position = MARGIN
                 continue
 
-            x_position += self.COL_WIDTH + self.MARGIN
+            # otherwise, move to the next column
+            x_position += COL_WIDTH + MARGIN
 
-            log.debug("position determined to be (%s, %s)", x_position, y_position)
-
-        for thread in queue:
+        # start all the threads and wait for them to finish
+        for thread in thread_queue:
             thread.start()
-
-        for thread in queue:
+        for thread in thread_queue:
             thread.join()
 
-        for member_image, position in done:
-            self.paste(member_image, (position[0]+self.SHADOW_OFFSET[0], position[1]))
+        # paste all completed member images onto the scoreboard
+        for member_image, position in drawn_members:
+            position = (position[0] + SHADOW_OFFSET_X, position[1])
+            self.paste(member_image, position)
 
-        if self.image.width > self.COL_WIDTH * 2:
-            await self.draw_header(member.guild)  # pylint: disable=undefined-loop-variable
+        # Draw the header if the scoreboard is wide enough
+        if self.image.width > COL_WIDTH * 2:
+            await self.draw_header(member.guild)  # pylint: disable=W0631
 
+        # Round the corners and antialias the final image
         self.rounded_corners(20)
         self.antialias()
 
-    async def draw_member(self, member: Member, score: ScoreObject) -> None:
+    async def draw_member(self, member: Member, score: ScoreObject) -> Editor:
         """Draw a certain member onto the scoreboard"""
 
         log.debug("drawing member %s", member)
 
-        member_editor = Editor(Canvas(
-            (
-                self.COL_WIDTH + (self.SHADOW_OFFSET[0] * -1),
-                self.COL_HEIGHT + self.SHADOW_OFFSET[1])
-            )
-        )
+        # Create an editor for the member column
+        width = COL_WIDTH + (SHADOW_OFFSET_X * -1)
+        height = COL_HEIGHT + SHADOW_OFFSET_Y
+        member_column = MemberColumn(member, score, (width, height))
+        await member_column.draw()
 
-        self.draw_background(member_editor, member.colour)
-        await self.draw_avatar(member_editor, member)
-        self.draw_name(member_editor, member)
-        self.draw_level(member_editor, score)
-
-        return member_editor
+        return member_column
 
     async def draw_header(self, guild:Guild) -> None:
         """Draw the footer"""
 
-        title_cordinates = (self.MARGIN, self.MARGIN + 35)
+        title_cordinates = (MARGIN, MARGIN + 35)
 
         if guild.icon:
             guild_icon = await load_image_async(guild.icon.url)
             guild_icon = Editor(guild_icon.resize((150, 150))).circle_image()
-            self.paste(guild_icon, (self.MARGIN, self.MARGIN))
-            title_cordinates = (150 + (self.MARGIN * 2), title_cordinates[1])
+            self.paste(guild_icon, (MARGIN, MARGIN))
+            title_cordinates = (150 + (MARGIN * 2), title_cordinates[1])
 
         self.text(
             title_cordinates,
@@ -414,7 +259,7 @@ class GridScoreboardEditor(ImageEditor):
             align="left"
         )
 
-        member_count_cordinates = (self.image.width - self.MARGIN, title_cordinates[1] + 10)
+        member_count_cordinates = (self.image.width - MARGIN, title_cordinates[1] + 10)
 
         self.text(
             member_count_cordinates,
@@ -424,96 +269,107 @@ class GridScoreboardEditor(ImageEditor):
             align="right"
         )
 
-    def draw_background(self, editor: Editor, accent_colour:Colour) -> None:
+class MemberColumn(ImageEditor):
+    """A class to draw a member column"""
+
+    __slots__ = ("member", "score", "accent_colour")
+
+    def __init__(self, member: Member, score: ScoreObject, size: tuple[int, int]):
+
+        self.member = member
+        self.score = score
+        self.size = size
+
+        # Default to a light grey accent colour if the member has no colour
+        if member.colour == Colour.default():
+            self.accent_colour = Colour.light_grey().to_rgb()
+        else:
+            self.accent_colour = member.colour.to_rgb()
+
+        canvas = Canvas(size)
+        super().__init__(canvas)
+
+    async def draw(self):
+        """Draw the member column"""
+
+        self.draw_background()
+        self.draw_name()
+        self.draw_level()
+        await self.draw_avatar()
+
+    def draw_background(self) -> None:
         """Draw the background for the member"""
 
-        if accent_colour == Colour.default():
-            accent_colour = Colour.light_grey()
-
-        accent_colour = accent_colour.to_rgb()
-
-        accent_size = 100
-
-        drop_shadow = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color="#0F0F0F80"))
+        drop_shadow = Editor(Canvas((COL_WIDTH, COL_HEIGHT), color="#0F0F0F80"))
         drop_shadow.rounded_corners(15)
-        drop_shadow_postion = (0, self.SHADOW_OFFSET[1])
-        editor.paste(drop_shadow, drop_shadow_postion)
+        drop_shadow_postion = (0, SHADOW_OFFSET_Y)
+        self.paste(drop_shadow, drop_shadow_postion)
 
-        # self.rectangle(position, self.COL_WIDTH, self.COL_HEIGHT, color=DARK_GREY, radius=15)
-        background = Editor(Canvas((self.COL_WIDTH, self.COL_HEIGHT), color=BLACK))
-        background.polygon(
-            (
-                # order: top left, bottom left, bottom right, top right
-                (self.COL_WIDTH - accent_size, 0),
-                (self.COL_WIDTH - (accent_size // 2), accent_size // 2),
-                (self.COL_WIDTH, accent_size),
-                (self.COL_WIDTH, 0)
-            ),
-            color=accent_colour
-        )
+        background = Editor(Canvas((COL_WIDTH, COL_HEIGHT), color=BLACK))
+        background.rectangle((0, 0), color=self.accent_colour, width=COL_WIDTH, height=175)
         background.rounded_corners(15)
 
-        editor.paste(background, (10, 0))
+        self.paste(background, (10, 0))
 
-    async def draw_avatar(self, editor: Editor, member: Member) -> None:
+    async def draw_avatar(self) -> None:
         """Draw the avatar for the member"""
 
-        avatar = await load_image_async(member.display_avatar.url)
-        avatar = avatar.resize((220, 220))
-
+        size = COL_WIDTH - int(MARGIN * 2.5)
         avatar_position = (
-            (self.COL_WIDTH // 2) - (avatar.width // 2) + 10,  # drop shadow offset
-            (self.COL_HEIGHT // 2) - ((avatar.height // 2) + 60)
+            (COL_WIDTH // 2) - (size // 2) + (SHADOW_OFFSET_X * -1),
+            int(MARGIN * 0.8)
         )
 
-        editor.paste(
+        avatar = Editor(Canvas((size, size), color=BLACK)).circle_image()
+        avatar.paste(
+            Editor(
+                await load_image_async(self.member.display_avatar.url)
+            ).resize((size - 20, size - 20)).circle_image(),
+            position=(10, 10)
+        )
+
+        self.paste(
             Editor(avatar).circle_image(),
             avatar_position
         )
 
-    def draw_name(self, editor: Editor, member: Member) -> None:
+    def draw_name(self) -> None:
         """Draw the name for the member"""
 
-        name = member.display_name
+        name = self.member.display_name
 
         # Prevent the name text from overflowing
         if len(name) > 15:
             log.debug("name is too long, shortening")
             name = name[:15]
 
-        # text_position = (10 + (self.COL_WIDTH // 2), self.COL_HEIGHT - 125)
-        text_position = ((self.SHADOW_OFFSET[0] * -1) + (self.COL_WIDTH // 2), 340)
+        text_position = ((SHADOW_OFFSET_X * -1) + (COL_WIDTH // 2), 380)
 
-        editor.text(
+        self.text(
             text_position, name, font=POPPINS_SMALL, color=WHITE, align="center"
         )
 
-    def draw_level(self, editor: Editor, score: ScoreObject) -> None:
+    def draw_level(self) -> None:
         """Draw the level for the member"""
 
         # We need the GIL to prevent a reccursion error
-        lock.acquire(True, timeout=5)
+        with lock:
 
-        rank_position = ((self.SHADOW_OFFSET[0] * -1) + 60, self.COL_HEIGHT - 70)
-        editor.text(
-            rank_position, f"#{score.rank}", font=POPPINS_SMALL, color=WHITE, align="left"
-        )
+            rank_position = ((SHADOW_OFFSET_X*-1) + (COL_WIDTH // 2), 470)
+            self.multi_text(
+                rank_position,
+                texts=(
+                    Text("RANK #", font=POPPINS_SMALL, color=LIGHT_GREY),
+                    Text(str(self.score.rank), font=POPPINS_SMALL, color=WHITE)
+                ),
+                align="center",
+                space_separated=False
+            )
 
-        # There is no longer a possible reccursion error, release the GIL
-        lock.release()
-
-        level_position = ((self.SHADOW_OFFSET[0] * -1) + self.COL_WIDTH - 60, rank_position[1])
-        editor.text(
-            level_position, f"LVL {humanize_number(score.level, whole=True)}", font=POPPINS_SMALL, color=WHITE, align="right"
-        )
-
-    def antialias(self):
-        """Antialias the image, also halves the image size due
-        to limitations"""
-
-        self.image = self.image.resize(
-            (self.image.width // 2, self.image.height // 2),
-            Image.ANTIALIAS
+        level_position = (rank_position[0], 520)
+        self.text(
+            level_position, f"LEVEL {int(self.score.level)}",
+            font=POPPINS_SMALL, color=LIGHT_GREY, align="center"
         )
 
 
@@ -544,21 +400,6 @@ class ScoreEditor(ImageEditor):
         self.image = self.image.resize(
             (self.image.width // 2, self.image.height // 2),
             Image.ANTIALIAS
-        )
-
-    def to_file(self, filename: str=None) -> File:
-        """Save the image to a file
-
-        Args:
-            filename (str): The filename, defaults to "image.png"
-
-        Returns:
-            File: The file"""
-
-        return File(
-            self.image_bytes,
-            filename=filename or "image.png",
-            description="Level card image"
         )
 
     async def draw(self) -> None:
