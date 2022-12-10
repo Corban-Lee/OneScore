@@ -156,7 +156,8 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         scores = db.records(
             "SELECT member_id, score FROM scores "
-            "WHERE guild_id = ? ORDER BY score DESC LIMIT 30",
+            "WHERE guild_id = ? AND active = 1 "
+            "ORDER BY score DESC LIMIT 30",
             guild.id
         )
 
