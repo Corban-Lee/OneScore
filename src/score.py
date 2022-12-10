@@ -29,7 +29,7 @@ class ScoreObject:
         return db.field(
             "SELECT rank FROM (SELECT member_id, RANK() OVER "
             "( ORDER BY score DESC ) AS rank FROM scores "
-            "WHERE guild_id = ?) WHERE member_id = ?",
+            "WHERE guild_id = ? AND active = 1) WHERE member_id = ?",
             self.guild_id, self.member_id
         )
 
