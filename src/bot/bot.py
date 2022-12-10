@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from os import listdir
 
 import discord
 from discord.ext import commands, tasks
@@ -11,10 +12,9 @@ from .logs import setup_logs
 
 log = logging.getLogger(__name__)
 
+
 class Bot(commands.Bot):
     """The bot itself"""
-
-    __slots__ = ("start_time",)
 
     def __init__(self):
         super().__init__(
@@ -54,7 +54,7 @@ class Bot(commands.Bot):
         """When the bot is ready"""
 
         log.info("Bot ready")
-        self._autosave_database.start()
+        self._autosave_database.start()  # pylint: disable=E1101
         await self.sync_app_commands()
 
     async def close(self) -> None:
@@ -63,3 +63,11 @@ class Bot(commands.Bot):
         log.info("Closing bot...")
         db.commit()  # commit changes before closing
         await super().close()
+
+    async def load_extensions(self) -> None:
+        """Load all extensions"""
+
+        # Iterate through all files in the ext folder and load them
+        for filename in listdir("src/ext"):
+            if filename.endswith(".py"):
+                await self.load_extension(f"ext.{filename[:-3]}")

@@ -12,8 +12,7 @@ async def main():
         token = file.read()
 
     async with Bot() as bot:
-        await bot.load_extension('bot.listeners')
-        await bot.load_extension('bot.commands')
+        await bot.load_extensions()
         await bot.start(token)
 
 if __name__ == "__main__":

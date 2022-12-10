@@ -10,6 +10,7 @@ from db import db
 
 log = logging.getLogger(__name__)
 
+
 class ListenersCog(commands.Cog, name="Event Listeners"):
     """Cog for level commands"""
 
