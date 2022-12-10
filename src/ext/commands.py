@@ -130,19 +130,31 @@ class CommandsCog(commands.Cog, name="Score Commands"):
         score_obj = ScoreObject(member.id, ctx.guild.id, score)
         await ctx.reply(repr(score_obj))
 
-    @commands.command(name="debug-set-score")
-    async def _debug_set_score_cmd(self, ctx: commands.Context, score:int, member: discord.Member=None):
-        """debug command. set a person's score"""
+    @commands.command(name="debug-show-active")
+    async def _debug_show_active_cmd(self, ctx: commands.Context):
+        """Show list of active/inactive members"""
 
-        member = member or ctx.author
-
-        db.execute(
-            "UPDATE scores SET score = ? "
-            "WHERE member_id = ? AND guild_id = ?",
-            score, member.id, ctx.guild.id
+        data = db.records(
+            "SELECT member_id, active FROM scores "
+            "WHERE guild_id = ?",
+            ctx.guild.id
         )
 
-        await ctx.reply(":thumbsup:")
+        await ctx.reply(str(data))
+
+    # @commands.command(name="debug-set-score")
+    # async def _debug_set_score_cmd(self, ctx: commands.Context, score:int, member: discord.Member=None):
+    #     """debug command. set a person's score"""
+
+    #     member = member or ctx.author
+
+    #     db.execute(
+    #         "UPDATE scores SET score = ? "
+    #         "WHERE member_id = ? AND guild_id = ?",
+    #         score, member.id, ctx.guild.id
+    #     )
+
+    #     await ctx.reply(":thumbsup:")
 
     async def get_scoreboard(self, guild: discord.Guild, style:ScoreboardStyles):
         """Get the scoreboard of the guild

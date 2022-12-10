@@ -5,6 +5,7 @@ import sqlite3
 
 import discord
 from discord.ext import commands
+from discord.utils import get
 
 from db import db
 
@@ -88,6 +89,40 @@ class ListenersCog(commands.Cog, name="Event Listeners"):
             guild_id
         )
 
+    async def validate_existing_members(self) -> None:
+        """Validates members in database are in the assigned guild"""
+
+        log.debug("Validating all members in the database")
+
+        members_data = db.records("SELECT member_id, active FROM scores")
+
+        for member_id, active in members_data:
+            for guild in self.bot.guilds:
+
+                log.debug("checking guild %s", guild.name)
+                member_exists = bool(get(guild.members, id=member_id))
+
+                # If the member is in the guild and not active - reactivate them
+                if member_exists and not active:
+                    log.debug("activating member %s", member_id)
+                    db.execute(
+                        "UPDATE scores SET active = 1 "
+                        "WHERE member_id = ? AND guild_id = ?",
+                        member_id, guild.id
+                    )
+
+                # If the member is NOT in the guild and active - deactivate them
+                elif not member_exists and active:
+                    log.debug("deactivating member %s", member_id)
+                    db.execute(
+                        "UPDATE scores SET active = 0 "
+                        "WHERE member_id = ? AND guild_id = ?",
+                        member_id, guild.id
+                    )
+
+                else:
+                    log.debug("not changing anything for member %s", member_id)
+
     @commands.Cog.listener()
     async def on_member_join(self, member) -> None:
         """When a member joins a guild"""
@@ -134,6 +169,7 @@ class ListenersCog(commands.Cog, name="Event Listeners"):
         log.info("Cog %s is ready", self.qualified_name)
         await self.bot.wait_until_ready()
         self.add_all_members()
+        await self.validate_existing_members()
 
 
 async def setup(bot: commands.Bot) -> None:
