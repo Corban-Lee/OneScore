@@ -166,12 +166,29 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         await self.respond_with_scoreboard(inter, inter.guild)
 
-    @commands.command(name="scoreboard")
+    @app_commands.command(name="leaderboard")
+    async def _leaderboard(self, inter: Inter):
+        """Get the scoreboard of the guild | Alias for `/scoreboard`"""
+
+        await self.respond_with_scoreboard(inter, inter.guild)
+
+    @commands.command(name="scoreboard", aliases=["leaderboard", "lb", "sb"])
     async def _scoreboard_normal_cmd(self, ctx: commands.Context):
         """Get the scoreboard of the guild"""
 
         scoreboard_image_file = await self.get_scoreboard(ctx.guild)
         await ctx.reply(file=scoreboard_image_file)
+
+    @app_commands.command(name="help")
+    async def _help(self, inter: Inter):
+        """Get help for using OneScore"""
+
+        name = self.bot.user.mention
+        await inter.response.send_message(
+            f"I'm {name}, a bot that tracks your score based on your activity in the server."
+            "\nYou can use `/rank` to get your rank, or `/leaderboard` to get the leaderboard"
+            " of the server."
+        )
 
 
 async def setup(bot: commands.Bot) -> None:
