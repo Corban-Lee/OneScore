@@ -168,8 +168,8 @@ class ListenersCog(commands.Cog, name="Event Listeners"):
 
         log.info("Cog %s is ready", self.qualified_name)
         await self.bot.wait_until_ready()
-        self.add_all_members()
         await self.validate_existing_members()
+        self.add_all_members()
 
 
 async def setup(bot: commands.Bot) -> None:
