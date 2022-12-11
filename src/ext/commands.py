@@ -12,9 +12,9 @@ from discord.ext import commands
 from db import db
 from score import ScoreObject
 from image import ScoreEditor, GridScoreboardEditor
-from constants import ScoreboardStyles
 
 log = logging.getLogger(__name__)
+
 
 class CommandsCog(commands.Cog, name="Score Commands"):
     """Cog for level commands"""
@@ -113,50 +113,7 @@ class CommandsCog(commands.Cog, name="Score Commands"):
         rank_image_file = await self.get_rank(member or ctx.author)
         await ctx.reply(file=rank_image_file)
 
-    @commands.command(name="debug-rank-repr")
-    async def _debug_rank_repr_cmd(self, ctx: commands.Context, member: discord.Member=None):
-        """Get the repr of a rank"""
-
-        member = member or ctx.author
-        if member.bot:
-            return await ctx.reply("Bots don't have ranks :(")
-
-        score = db.field(
-            "SELECT score FROM scores "
-            "WHERE member_id = ? AND guild_id = ?",
-            member.id, ctx.guild.id
-        )
-
-        score_obj = ScoreObject(member.id, ctx.guild.id, score)
-        await ctx.reply(repr(score_obj))
-
-    @commands.command(name="debug-show-active")
-    async def _debug_show_active_cmd(self, ctx: commands.Context):
-        """Show list of active/inactive members"""
-
-        data = db.records(
-            "SELECT member_id, active FROM scores "
-            "WHERE guild_id = ?",
-            ctx.guild.id
-        )
-
-        await ctx.reply(str(data))
-
-    # @commands.command(name="debug-set-score")
-    # async def _debug_set_score_cmd(self, ctx: commands.Context, score:int, member: discord.Member=None):
-    #     """debug command. set a person's score"""
-
-    #     member = member or ctx.author
-
-    #     db.execute(
-    #         "UPDATE scores SET score = ? "
-    #         "WHERE member_id = ? AND guild_id = ?",
-    #         score, member.id, ctx.guild.id
-    #     )
-
-    #     await ctx.reply(":thumbsup:")
-
-    async def get_scoreboard(self, guild: discord.Guild, style:ScoreboardStyles):
+    async def get_scoreboard(self, guild: discord.Guild):
         """Get the scoreboard of the guild
 
         Args:
@@ -181,20 +138,11 @@ class CommandsCog(commands.Cog, name="Score Commands"):
             for member_id, score in scores
         ]
 
-        match style:
-            case ScoreboardStyles.Grid:
-                scoreboard_image_editor = GridScoreboardEditor(members_and_scores)
-            # case ScoreboardStyles.List:
-            #     scoreboard_image_editor = ListScoreboardEditor(members_and_scores)
-            case _:
-                raise ValueError("Invalid scoreboard style provided.")
-
+        scoreboard_image_editor = GridScoreboardEditor(members_and_scores)
         await scoreboard_image_editor.draw()
         return scoreboard_image_editor.to_file()
 
-    async def respond_with_scoreboard(
-        self, inter: Inter, guild: discord.Guild, style:ScoreboardStyles
-    ):
+    async def respond_with_scoreboard(self, inter: Inter, guild: discord.Guild):
         """Respond with the scoreboard of the guild to an interaction
 
         Args:
@@ -205,26 +153,24 @@ class CommandsCog(commands.Cog, name="Score Commands"):
 
         await inter.response.defer(thinking=True)
 
-        scoreboard_image_file = await self.get_scoreboard(guild, style)
+        scoreboard_image_file = await self.get_scoreboard(guild)
         await inter.followup.send(file=scoreboard_image_file)
 
     @app_commands.command(name="scoreboard")
-    async def _scoreboard(self, inter: Inter, style:ScoreboardStyles=ScoreboardStyles.Grid):
+    async def _scoreboard(self, inter: Inter):
         """Get the scoreboard of the guild
 
         Args:
             style (ScoreboardStyles): The style of the scoreboard
         """
 
-        await self.respond_with_scoreboard(inter, inter.guild, style)
+        await self.respond_with_scoreboard(inter, inter.guild)
 
     @commands.command(name="scoreboard")
-    async def _scoreboard_normal_cmd(
-        self, ctx: commands.Context, style:ScoreboardStyles=ScoreboardStyles.Grid
-    ):
+    async def _scoreboard_normal_cmd(self, ctx: commands.Context):
         """Get the scoreboard of the guild"""
 
-        scoreboard_image_file = await self.get_scoreboard(ctx.guild, style)
+        scoreboard_image_file = await self.get_scoreboard(ctx.guild)
         await ctx.reply(file=scoreboard_image_file)
 
 
