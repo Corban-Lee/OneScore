@@ -158,13 +158,6 @@ class GridScoreboardEditor(ScoreboardEditor):
         canvas = Canvas((width, height))
         super().__init__(canvas)
 
-        # Draw the background
-        self.rectangle(
-            (0, 0), width=width, height=height,
-            color=DARK_GREY, outline=LIGHT_GREY,
-            stroke_width=5, radius=100
-        )
-
     async def draw(self) -> None:
         """Draw the scoreboard image"""
 
